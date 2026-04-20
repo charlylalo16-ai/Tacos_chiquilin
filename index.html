@@ -478,9 +478,13 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   <div id="page-usuarios" class="page">
     <div id="usr-denied" class="access-denied" style="display:none"><div class="ico">🔒</div><h3>Acceso restringido</h3><p>Solo administradores</p></div>
     <div id="usr-content">
-      <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;">
+      <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
         <h3 style="font-family:'Fredoka One',cursive;color:var(--cafe);font-size:15px;flex:1;">👥 Usuarios del Sistema</h3>
         <button class="btn btn-rojo" style="font-size:12px;padding:8px 13px;" onclick="abrirNuevoUsuario()">＋ Agregar</button>
+      </div>
+      <div style="background:#fff3e0;border-radius:12px;padding:12px 14px;margin-bottom:14px;border-left:4px solid #e65100;">
+        <p style="font-size:12px;font-weight:700;color:#e65100;margin-bottom:8px;">⚙️ Si actualizaste las mesas (más espacios Para Llevar), presiona este botón <strong>una sola vez</strong>:</p>
+        <button class="btn" style="background:#e65100;color:#fff;font-size:12px;padding:8px 14px;" onclick="resetearMesas()">🔄 Actualizar mesas en la nube</button>
       </div>
       <div id="usuariosLista"></div>
     </div>
@@ -523,6 +527,16 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
 <div class="overlay" id="ov-mesa">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header"><h2 id="mesa-modal-titulo">Mesa 1</h2><button class="btn btn-gris btn-sm" onclick="cerrar('ov-mesa')">✕</button></div>
+    <!-- Campo cliente — solo Para Llevar -->
+    <div id="campo-cliente-wrap" style="display:none;margin-bottom:10px;">
+      <div style="background:linear-gradient(135deg,#e65100,#bf360c);border-radius:11px;padding:11px 14px;">
+        <label style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:6px;">👤 Nombre del cliente</label>
+        <input type="text" id="input-cliente" placeholder="Ej: Juan, Familia Pérez..." autocomplete="off"
+          oninput="guardarClienteTemporal()"
+          style="width:100%;padding:9px 12px;border-radius:8px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;outline:none;"
+          onfocus="this.style.borderColor='var(--amarillo)'" onblur="this.style.borderColor='rgba(255,255,255,0.3)'">
+      </div>
+    </div>
     <div class="pedido-sec"><h4>🌮 Tacos y Platillos</h4><div id="pedido-tacos"></div></div>
     <div class="pedido-sec"><h4>🥤 Bebidas</h4><div id="pedido-bebidas"></div></div>
     <div class="pedido-sec"><h4>🍲 Consomé</h4><div id="pedido-consome"></div></div>
@@ -608,7 +622,10 @@ const MESAS_DEFAULT = [
   {id:2,nombre:'Mesa 2',pedido:{},abierta:false,tipo:'mesa'},
   {id:3,nombre:'Mesa 3',pedido:{},abierta:false,tipo:'mesa'},
   {id:4,nombre:'Mesa 4',pedido:{},abierta:false,tipo:'mesa'},
-  {id:5,nombre:'Para Llevar',pedido:{},abierta:false,tipo:'llevar'},
+  {id:5,nombre:'Para Llevar 1',pedido:{},abierta:false,tipo:'llevar',cliente:''},
+  {id:6,nombre:'Para Llevar 2',pedido:{},abierta:false,tipo:'llevar',cliente:''},
+  {id:7,nombre:'Para Llevar 3',pedido:{},abierta:false,tipo:'llevar',cliente:''},
+  {id:8,nombre:'Para Llevar 4',pedido:{},abierta:false,tipo:'llevar',cliente:''},
 ];
 const INV_DEFAULT = [
   {id:'ref400',nombre:'Refresco 400ml',categoria:'Bebidas',unidad:'piezas',stock:24,min:12},
@@ -848,9 +865,10 @@ window.renderMesas = () => {
     const itemsHTML=items.length
       ?items.map(([id,cant])=>{const p=findProd(id);if(!p)return '';return `<div class="mesa-item"><span class="nombre">${p.nombre}</span><span class="cant">${cant}</span><span class="precio">$${p.precio*cant}</span></div>`;}).join('')
       :`<p style="color:#bbb;font-size:11px;text-align:center;padding:6px 0">${isLlevar?'Sin pedido':'Mesa libre'}</p>`;
+    const clienteBadge=isLlevar&&m.cliente?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:6px;">👤 ${m.cliente}</span>`:'';
     return `<div class="mesa-card ${cls}${isLlevar?' llevar-card':''}">
       <div class="mesa-header ${cls}">
-        <span class="mesa-num">${emoji} ${m.nombre}</span>
+        <span class="mesa-num">${emoji} ${m.nombre}${clienteBadge}</span>
         <span class="mesa-total-show">${m.abierta?'$'+total:'Libre'}</span>
       </div>
       <div class="mesa-body">${itemsHTML}</div>
@@ -875,6 +893,16 @@ window.abrirMesa = (mid) => {
   document.getElementById('btn-toggle-cobro').style.display='';
   document.getElementById('billete-input').value='';
   document.getElementById('cambio-display').textContent='$—';
+  // Campo cliente: solo visible en Para Llevar
+  const campoCliente=document.getElementById('campo-cliente-wrap');
+  const inputCliente=document.getElementById('input-cliente');
+  if(isLlevar){
+    campoCliente.style.display='block';
+    inputCliente.value=m.cliente||'';
+  } else {
+    campoCliente.style.display='none';
+    inputCliente.value='';
+  }
   renderPedidoModal(); abrir('ov-mesa');
 };
 
@@ -896,6 +924,15 @@ function renderPedidoModal(){
   actualizarTotalModal();
 }
 
+window.guardarClienteTemporal = () => {
+  const m=mesas.find(x=>x.id===mesaActiva);
+  if(m&&m.tipo==='llevar'){
+    m.cliente=document.getElementById('input-cliente').value.trim();
+    // Actualizar badge en la tarjeta sin guardar en Firebase (se guarda al cobrar)
+    renderMesas();
+  }
+};
+
 window.cambiarQty = (id,delta) => {
   pedidoTemporal[id]=(pedidoTemporal[id]||0)+delta;
   if(pedidoTemporal[id]<0) pedidoTemporal[id]=0;
@@ -911,6 +948,7 @@ async function actualizarTotalModal(){
   if(m){
     m.pedido=JSON.parse(JSON.stringify(pedidoTemporal));
     m.abierta=Object.values(pedidoTemporal).some(v=>v>0);
+    if(m.tipo==='llevar') m.cliente=document.getElementById('input-cliente')?.value.trim()||m.cliente||'';
     await saveMesas();
   }
   calcCambio();
@@ -970,7 +1008,7 @@ window.confirmarCobro = async () => {
   // Guardar venta en colección historial
   const now=new Date();
   await addDoc(collection(db,'historial'),{
-    mesa:m.nombre, tipo:m.tipo||'mesa',
+    mesa:m.nombre, tipo:m.tipo||'mesa', cliente:m.cliente||'',
     pedido:JSON.parse(JSON.stringify(m.pedido)),
     total, billete:billete||null, cambio,
     hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
@@ -978,7 +1016,7 @@ window.confirmarCobro = async () => {
     cobradoPor:sesion?.nombre||'',
     ts:serverTimestamp()
   });
-  m.pedido={}; m.abierta=false; pedidoTemporal={};
+  m.pedido={}; m.abierta=false; m.cliente=''; pedidoTemporal={};
   await saveMesas();
   cerrar('ov-mesa');
   const msg=cambio!==null&&cambio>=0?`✅ Cobrado $${total} — Cambio: $${cambio}`:`✅ ${m.nombre} cobrada — $${total}`;
@@ -1179,24 +1217,27 @@ window.renderHistorial = () => {
     lista.innerHTML=''; empty.style.display='block'; return;
   }
   empty.style.display='none';
-  const top=Object.entries(ventas).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  // FIX 1: todos los productos ordenados por cantidad, sin límite
+  const todosProductos=Object.entries(ventas).sort((a,b)=>b[1]-a[1]);
   resumenEl.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <h3 style="font-family:'Fredoka One',cursive;color:var(--cafe);font-size:14px;">📊 ${periodoLabel}</h3>
       <span style="font-family:'Fredoka One',cursive;color:#999;font-size:11px;">${filtrado.length} venta${filtrado.length!==1?'s':''}</span>
     </div>
-    ${top.map(([id,cant])=>{const p=findProd(id);return p?`<div class="resumen-row"><span>${p.nombre}</span><span>${cant} pzas — $${p.precio*cant}</span></div>`:''}).join('')}
-    <div class="resumen-row"><span>💰 Total del período</span><span>$${totalPeriodo}</span></div>`;
+    ${todosProductos.map(([id,cant])=>{const p=findProd(id);return p?`<div class="resumen-row"><span>${p.nombre}</span><span>${cant} pzas — $${p.precio*cant}</span></div>`:''}).join('')}
+    ${esAdmin()?`<div class="resumen-row"><span>💰 Total del período</span><span>$${totalPeriodo}</span></div>`:''}`;
+  // FIX 2: el total de cada venta solo lo ve el admin
   lista.innerHTML=filtrado.map(h=>{
     const isLlevar=h.tipo==='llevar';
     const items=Object.entries(h.pedido||{}).filter(([,v])=>v>0).map(([id,c])=>{const p=findProd(id);return p?`${c}x ${p.nombre}`:''}).filter(Boolean).join(' · ');
-    const cobroInfo=h.billete?`💵 Pagó: $${h.billete} · Cambio: $${h.cambio>=0?h.cambio:'—'}`:'';
+    const cobroInfo=esAdmin()&&h.billete?`💵 Pagó: $${h.billete} · Cambio: $${h.cambio>=0?h.cambio:'—'}`:'';
     const cobradoPor=h.cobradoPor?` · 👤 ${h.cobradoPor}`:'';
     return `<div class="historial-item ${isLlevar?'llevar-hist':''}">
       <div class="hi-header">
         <span class="hi-mesa ${isLlevar?'llevar':''}">${isLlevar?'🛍️':'🍽️'} ${h.mesa}</span>
-        <span class="hi-total">$${h.total}</span>
+        ${esAdmin()?`<span class="hi-total">$${h.total}</span>`:''}
       </div>
+      ${h.cliente?`<div style="background:#fff3e0;border-radius:6px;padding:2px 8px;display:inline-block;font-size:11px;font-weight:800;color:#e65100;margin-bottom:3px;">👤 ${h.cliente}</div>`:''}
       <div class="hi-hora">🕐 ${h.hora} — ${h.fecha}${cobradoPor}</div>
       <div class="hi-items">${items}</div>
       ${cobroInfo?`<div class="hi-cobro">${cobroInfo}</div>`:''}
@@ -1226,7 +1267,6 @@ window.renderUsuariosWithAccess = async () => {
   const content=document.getElementById('usr-content');
   if(!esAdmin()){denied.style.display='block';content.style.display='none';return;}
   denied.style.display='none'; content.style.display='block';
-  // Cargar usuarios de Firestore
   const {getDocs}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
   const snap=await getDocs(collection(db,'usuarios'));
   const usuariosFS=snap.docs.map(d=>({...d.data(),uid:d.id}));
@@ -1239,15 +1279,42 @@ window.renderUsuariosWithAccess = async () => {
         <div class="urole">${u.email||'Google'}</div>
       </div>
       <div class="acciones">
-        ${u.uid!==sesion.uid?`<button class="btn-sm btn-edit" onclick="cambiarRol('${u.uid}','${u.rol==='admin'?'mesero':'admin'}')">🔄 ${u.rol==='admin'?'→Mesero':'→Admin'}</button>`:'<span style="font-size:10px;color:#ccc">Tú</span>'}
+        ${u.uid!==sesion.uid
+          ? `<button class="btn-sm btn-edit" onclick="cambiarRol('${u.uid}','${u.rol==='admin'?'mesero':'admin'}')">🔄 ${u.rol==='admin'?'→Mesero':'→Admin'}</button>
+             <button class="btn-sm btn-del" onclick="eliminarUsuario('${u.uid}','${(u.nombre||'').replace(/'/g,"\\'")}')">🗑️</button>`
+          : '<span style="font-size:10px;color:#ccc">Tú</span>'}
       </div>
     </div>`).join('');
+};
+
+window.resetearMesas = async () => {
+  if(!confirm('¿Actualizar las mesas en la nube? Las mesas actuales se quedarán igual, solo se agregarán los nuevos espacios Para Llevar que falten.'))return;
+  // Obtener mesas actuales
+  const snap = await getDoc(doc(db,'config','mesas'));
+  const mesasActuales = snap.exists() ? snap.data().lista : [];
+  // Agregar solo las que no existen por id
+  const nuevas = MESAS_DEFAULT.filter(nd => !mesasActuales.find(ma => ma.id === nd.id));
+  if(!nuevas.length){ toast('✅ Las mesas ya están al día'); return; }
+  const mesasActualizadas = [...mesasActuales, ...nuevas];
+  await setDoc(doc(db,'config','mesas'), {lista: mesasActualizadas});
+  toast('✅ Mesas actualizadas — se agregaron '+nuevas.length+' nuevos espacios');
 };
 
 window.cambiarRol = async (uid, nuevoRol) => {
   if(!confirm(`¿Cambiar el rol a ${nuevoRol}?`))return;
   await setDoc(doc(db,'usuarios',uid),{rol:nuevoRol},{merge:true});
   toast('✅ Rol actualizado'); renderUsuariosWithAccess();
+};
+
+window.eliminarUsuario = async (uid, nombre) => {
+  if(!confirm(`¿Eliminar al usuario "${nombre}"?\nEsto lo quitará del sistema pero podrá seguir usando su cuenta de Google.`))return;
+  try {
+    await deleteDoc(doc(db,'usuarios',uid));
+    toast('🗑️ Usuario eliminado: '+nombre);
+    renderUsuariosWithAccess();
+  } catch(e){
+    toast('❌ Error al eliminar: '+e.message);
+  }
 };
 
 window.abrirNuevoUsuario = () => {
