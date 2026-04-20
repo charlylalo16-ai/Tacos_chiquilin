@@ -768,33 +768,63 @@ window.doLogout = async () => {
 };
 
 // ── Detectar estado de auth ──
-onAuthStateChanged(auth, async (user) => {
-  if(user){
-    // Buscar perfil en Firestore
-    const perfil = await getDoc(doc(db,'usuarios',user.uid));
-    let rol = 'mesero';
-    let nombre = user.displayName || user.email;
-    if(perfil.exists()){
-      rol = perfil.data().rol || 'mesero';
-      nombre = perfil.data().nombre || nombre;
-    } else {
-      // Primera vez — crear perfil
-      // Si es el primer usuario del sistema → admin
-      const adminCheck = await getDoc(doc(db,'config','primerAdmin'));
-      if(!adminCheck.exists()){
-        rol = 'admin';
-        await setDoc(doc(db,'config','primerAdmin'),{uid:user.uid});
-      }
-      await setDoc(doc(db,'usuarios',user.uid),{
-        nombre, email:user.email||'', rol, photoURL:user.photoURL||'', creado:serverTimestamp()
-      });
-    }
-    sesion = {uid:user.uid, nombre, email:user.email||'', rol, photoURL:user.photoURL||''};
-    entrarAlSistema();
-  } else {
+// Timeout de seguridad: si Firebase no responde en 8 segundos, mostrar login de todas formas
+const splashTimeout = setTimeout(() => {
+  if(document.getElementById('splash').style.display !== 'none'){
+    console.warn('Firebase timeout — mostrando login');
     document.getElementById('splash').style.display='none';
     document.getElementById('login-screen').style.display='flex';
+    // Mostrar aviso de posible problema de dominio
+    const err = document.getElementById('login-error');
+    err.textContent = '⚠️ Verifica tu conexión o que el dominio esté autorizado en Firebase';
+    err.style.display = 'block';
   }
+}, 8000);
+
+onAuthStateChanged(auth, async (user) => {
+  clearTimeout(splashTimeout);
+  try {
+    if(user){
+      // Buscar perfil en Firestore
+      const perfil = await getDoc(doc(db,'usuarios',user.uid));
+      let rol = 'mesero';
+      let nombre = user.displayName || user.email;
+      if(perfil.exists()){
+        rol = perfil.data().rol || 'mesero';
+        nombre = perfil.data().nombre || nombre;
+      } else {
+        // Primera vez — crear perfil
+        const adminCheck = await getDoc(doc(db,'config','primerAdmin'));
+        if(!adminCheck.exists()){
+          rol = 'admin';
+          await setDoc(doc(db,'config','primerAdmin'),{uid:user.uid});
+        }
+        await setDoc(doc(db,'usuarios',user.uid),{
+          nombre, email:user.email||'', rol, photoURL:user.photoURL||'', creado:serverTimestamp()
+        });
+      }
+      sesion = {uid:user.uid, nombre, email:user.email||'', rol, photoURL:user.photoURL||''};
+      entrarAlSistema();
+    } else {
+      document.getElementById('splash').style.display='none';
+      document.getElementById('login-screen').style.display='flex';
+    }
+  } catch(e) {
+    console.error('Auth error:', e);
+    document.getElementById('splash').style.display='none';
+    document.getElementById('login-screen').style.display='flex';
+    const err = document.getElementById('login-error');
+    err.textContent = '❌ Error de conexión: ' + e.message;
+    err.style.display = 'block';
+  }
+}, (error) => {
+  clearTimeout(splashTimeout);
+  console.error('onAuthStateChanged error:', error);
+  document.getElementById('splash').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  const err = document.getElementById('login-error');
+  err.textContent = '❌ ' + error.message;
+  err.style.display = 'block';
 });
 
 async function entrarAlSistema(){
