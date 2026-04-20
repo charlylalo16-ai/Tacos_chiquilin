@@ -248,6 +248,9 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
 .role-badge.admin{background:#fde8e8;color:var(--rojo-d);}.role-badge.mesero{background:var(--azul-l);color:var(--azul);}
 
 /* ── TOAST ── */
+/* Ticket */
+#ticket-preview{font-size:11.5px;line-height:1.65;letter-spacing:0;}
+@media print{.overlay{display:block!important;}.modal{box-shadow:none;border-radius:0;}}
 .toast{position:fixed;bottom:18px;right:16px;background:var(--cafe);color:var(--amarillo);padding:10px 18px;border-radius:11px;font-family:'Fredoka One',cursive;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,0.3);z-index:1001;display:none;animation:slideUp .3s ease;}
 @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 
@@ -482,9 +485,14 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
         <h3 style="font-family:'Fredoka One',cursive;color:var(--cafe);font-size:15px;flex:1;">👥 Usuarios del Sistema</h3>
         <button class="btn btn-rojo" style="font-size:12px;padding:8px 13px;" onclick="abrirNuevoUsuario()">＋ Agregar</button>
       </div>
-      <div style="background:#fff3e0;border-radius:12px;padding:12px 14px;margin-bottom:14px;border-left:4px solid #e65100;">
-        <p style="font-size:12px;font-weight:700;color:#e65100;margin-bottom:8px;">⚙️ Si actualizaste las mesas (más espacios Para Llevar), presiona este botón <strong>una sola vez</strong>:</p>
-        <button class="btn" style="background:#e65100;color:#fff;font-size:12px;padding:8px 14px;" onclick="resetearMesas()">🔄 Actualizar mesas en la nube</button>
+      <!-- Gestión de mesas -->
+      <div style="background:#fff;border-radius:14px;padding:14px;box-shadow:var(--shadow);margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h4 style="font-family:'Fredoka One',cursive;color:var(--cafe);font-size:14px;">🍽️ Gestión de Mesas</h4>
+          <button class="btn btn-rojo btn-sm" style="font-size:11px;padding:6px 11px;" onclick="abrirAgregarMesa()">＋ Mesa</button>
+        </div>
+        <div id="mesas-admin-lista" style="margin-bottom:10px;"></div>
+        <button class="btn" style="background:#e65100;color:#fff;font-size:12px;padding:8px 14px;width:100%;margin-top:6px;" onclick="aplicarCambiosMesas()">☁️ Guardar cambios en la nube</button>
       </div>
       <div id="usuariosLista"></div>
     </div>
@@ -529,12 +537,30 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
     <div class="modal-header"><h2 id="mesa-modal-titulo">Mesa 1</h2><button class="btn btn-gris btn-sm" onclick="cerrar('ov-mesa')">✕</button></div>
     <!-- Campo cliente — solo Para Llevar -->
     <div id="campo-cliente-wrap" style="display:none;margin-bottom:10px;">
-      <div style="background:linear-gradient(135deg,#e65100,#bf360c);border-radius:11px;padding:11px 14px;">
-        <label style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:6px;">👤 Nombre del cliente</label>
-        <input type="text" id="input-cliente" placeholder="Ej: Juan, Familia Pérez..." autocomplete="off"
-          oninput="guardarClienteTemporal()"
-          style="width:100%;padding:9px 12px;border-radius:8px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;outline:none;"
-          onfocus="this.style.borderColor='var(--amarillo)'" onblur="this.style.borderColor='rgba(255,255,255,0.3)'">
+      <div style="background:linear-gradient(135deg,#e65100,#bf360c);border-radius:11px;padding:11px 14px;display:flex;flex-direction:column;gap:8px;">
+        <div>
+          <label style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:4px;">👤 Nombre del cliente</label>
+          <input type="text" id="input-cliente" placeholder="Ej: Juan, Familia Pérez..." autocomplete="off"
+            oninput="guardarClienteTemporal()"
+            style="width:100%;padding:8px 11px;border-radius:8px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;font-family:'Nunito',sans-serif;font-size:13px;font-weight:700;outline:none;"
+            onfocus="this.style.borderColor='var(--amarillo)'" onblur="this.style.borderColor='rgba(255,255,255,0.3)'">
+        </div>
+        <div class="row2" style="gap:8px;">
+          <div style="flex:1;">
+            <label style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:4px;">📞 Teléfono</label>
+            <input type="tel" id="input-telefono" placeholder="Opcional" autocomplete="off"
+              oninput="guardarClienteTemporal()"
+              style="width:100%;padding:8px 11px;border-radius:8px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;font-family:'Nunito',sans-serif;font-size:13px;font-weight:700;outline:none;"
+              onfocus="this.style.borderColor='var(--amarillo)'" onblur="this.style.borderColor='rgba(255,255,255,0.3)'">
+          </div>
+        </div>
+        <div>
+          <label style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;display:block;margin-bottom:4px;">📍 Dirección / Referencia</label>
+          <input type="text" id="input-direccion" placeholder="Opcional — Calle, colonia..." autocomplete="off"
+            oninput="guardarClienteTemporal()"
+            style="width:100%;padding:8px 11px;border-radius:8px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);color:#fff;font-family:'Nunito',sans-serif;font-size:13px;font-weight:700;outline:none;"
+            onfocus="this.style.borderColor='var(--amarillo)'" onblur="this.style.borderColor='rgba(255,255,255,0.3)'">
+        </div>
       </div>
     </div>
     <div class="pedido-sec"><h4>🌮 Tacos y Platillos</h4><div id="pedido-tacos"></div></div>
@@ -561,6 +587,39 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
     <div class="fg"><label>Contraseña (mínimo 6 caracteres)</label><input type="password" id="u-pass" placeholder="••••••" autocomplete="new-password"></div>
     <div class="fg"><label>Rol</label><select id="u-rol"><option value="admin">👑 Admin — acceso completo</option><option value="mesero" selected>🍽️ Mesero — solo mesas e historial</option></select></div>
     <div class="modal-btns"><button class="btn btn-gris" onclick="cerrar('ov-usuario')">Cancelar</button><button class="btn btn-rojo" onclick="guardarUsuario()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Modal: Ticket de impresión -->
+<div class="overlay" id="ov-ticket">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-header">
+      <h2>🧾 Ticket</h2>
+      <button class="btn btn-gris btn-sm" onclick="cerrar('ov-ticket')">✕</button>
+    </div>
+    <div id="ticket-preview" style="background:#fff;border:1px dashed #ccc;border-radius:10px;padding:16px;font-family:'Courier New',monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;max-height:55vh;overflow-y:auto;"></div>
+    <div class="modal-btns" style="margin-top:12px;">
+      <button class="btn btn-gris" onclick="cerrar('ov-ticket')">Cerrar</button>
+      <button class="btn btn-cafe" onclick="imprimirTicket()">🖨️ Imprimir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Nueva mesa -->
+<div class="overlay" id="ov-nueva-mesa">
+  <div class="modal">
+    <div class="modal-header"><h2 id="nm-titulo">Nueva Mesa</h2><button class="btn btn-gris btn-sm" onclick="cerrar('ov-nueva-mesa')">✕</button></div>
+    <div class="fg"><label>Nombre *</label><input type="text" id="nm-nombre" placeholder="Ej: Mesa 5 / Terraza"></div>
+    <div class="fg"><label>Tipo</label>
+      <select id="nm-tipo">
+        <option value="mesa">🍽️ Mesa normal</option>
+        <option value="llevar">🛍️ Para Llevar</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-gris" onclick="cerrar('ov-nueva-mesa')">Cancelar</button>
+      <button class="btn btn-rojo" onclick="guardarNuevaMesa()">Agregar</button>
+    </div>
   </div>
 </div>
 
@@ -875,6 +934,7 @@ window.renderMesas = () => {
       <div class="mesa-btns">
         <button class="btn ${m.abierta?'btn-cafe':'btn-rojo'}" onclick="abrirMesa(${m.id})">${m.abierta?'✏️ Editar':'➕ '+(isLlevar?'Pedido':'Abrir')}</button>
         ${m.abierta?`<button class="btn btn-verde" onclick="cobrarDirecto(${m.id})">💳 Cobrar</button>`:''}
+        ${m.abierta?`<button class="btn btn-gris" style="flex:0;padding:7px 9px;" onclick="verTicket(${m.id})" title="Ver ticket">🧾</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -899,9 +959,13 @@ window.abrirMesa = (mid) => {
   if(isLlevar){
     campoCliente.style.display='block';
     inputCliente.value=m.cliente||'';
+    document.getElementById('input-telefono').value=m.telefono||'';
+    document.getElementById('input-direccion').value=m.direccion||'';
   } else {
     campoCliente.style.display='none';
     inputCliente.value='';
+    document.getElementById('input-telefono').value='';
+    document.getElementById('input-direccion').value='';
   }
   renderPedidoModal(); abrir('ov-mesa');
 };
@@ -928,7 +992,8 @@ window.guardarClienteTemporal = () => {
   const m=mesas.find(x=>x.id===mesaActiva);
   if(m&&m.tipo==='llevar'){
     m.cliente=document.getElementById('input-cliente').value.trim();
-    // Actualizar badge en la tarjeta sin guardar en Firebase (se guarda al cobrar)
+    m.telefono=document.getElementById('input-telefono').value.trim();
+    m.direccion=document.getElementById('input-direccion').value.trim();
     renderMesas();
   }
 };
@@ -948,7 +1013,11 @@ async function actualizarTotalModal(){
   if(m){
     m.pedido=JSON.parse(JSON.stringify(pedidoTemporal));
     m.abierta=Object.values(pedidoTemporal).some(v=>v>0);
-    if(m.tipo==='llevar') m.cliente=document.getElementById('input-cliente')?.value.trim()||m.cliente||'';
+    if(m.tipo==='llevar'){
+      m.cliente=document.getElementById('input-cliente')?.value.trim()||m.cliente||'';
+      m.telefono=document.getElementById('input-telefono')?.value.trim()||m.telefono||'';
+      m.direccion=document.getElementById('input-direccion')?.value.trim()||m.direccion||'';
+    }
     await saveMesas();
   }
   calcCambio();
@@ -1009,6 +1078,7 @@ window.confirmarCobro = async () => {
   const now=new Date();
   await addDoc(collection(db,'historial'),{
     mesa:m.nombre, tipo:m.tipo||'mesa', cliente:m.cliente||'',
+    telefono:m.telefono||'', direccion:m.direccion||'',
     pedido:JSON.parse(JSON.stringify(m.pedido)),
     total, billete:billete||null, cambio,
     hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
@@ -1016,11 +1086,29 @@ window.confirmarCobro = async () => {
     cobradoPor:sesion?.nombre||'',
     ts:serverTimestamp()
   });
-  m.pedido={}; m.abierta=false; m.cliente=''; pedidoTemporal={};
+  // Guardar datos del ticket antes de limpiar
+  const ticketData = {
+    nombre: m.nombre, cliente: m.cliente||'',
+    telefono: m.telefono||'', direccion: m.direccion||'',
+    pedido: JSON.parse(JSON.stringify(m.pedido)),
+    total, billete: billete||null, cambio,
+    hora: now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+    fecha: now.toLocaleDateString('es-MX'),
+    cobradoPor: sesion?.nombre||''
+  };
+  m.pedido={}; m.abierta=false; m.cliente=''; m.telefono=''; m.direccion=''; pedidoTemporal={};
   await saveMesas();
   cerrar('ov-mesa');
   const msg=cambio!==null&&cambio>=0?`✅ Cobrado $${total} — Cambio: $${cambio}`:`✅ ${m.nombre} cobrada — $${total}`;
   toast(msg);
+  // Ofrecer imprimir ticket automáticamente
+  setTimeout(()=>{
+    if(confirm('¿Imprimir ticket?')){
+      const txt = buildTicketTexto(ticketData);
+      document.getElementById('ticket-preview').textContent = txt;
+      abrir('ov-ticket');
+    }
+  }, 500);
 };
 
 // ════════════════════════════════════════════
@@ -1241,7 +1329,10 @@ window.renderHistorial = () => {
       <div class="hi-hora">🕐 ${h.hora} — ${h.fecha}${cobradoPor}</div>
       <div class="hi-items">${items}</div>
       ${cobroInfo?`<div class="hi-cobro">${cobroInfo}</div>`:''}
-      ${esAdmin()?`<button class="btn-sm btn-del" style="margin-top:5px;font-size:10px;" onclick="eliminarVenta('${h._id}')">🗑️</button>`:''}
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn-sm" style="background:#f4efe5;color:var(--cafe);font-size:10px;" onclick="generarTicketHistorial(${i})">🧾 Ticket</button>
+        ${esAdmin()?`<button class="btn-sm btn-del" style="font-size:10px;" onclick="eliminarVenta('${h._id}')">🗑️</button>`:''}
+      </div>
     </div>`;
   }).join('');
 };
@@ -1267,6 +1358,9 @@ window.renderUsuariosWithAccess = async () => {
   const content=document.getElementById('usr-content');
   if(!esAdmin()){denied.style.display='block';content.style.display='none';return;}
   denied.style.display='none'; content.style.display='block';
+  // Cargar mesas para sección de gestión
+  if(mesas){ mesasTemp = JSON.parse(JSON.stringify(mesas)); renderMesasAdmin(); }
+  // Cargar usuarios de Firestore
   const {getDocs}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
   const snap=await getDocs(collection(db,'usuarios'));
   const usuariosFS=snap.docs.map(d=>({...d.data(),uid:d.id}));
@@ -1285,6 +1379,167 @@ window.renderUsuariosWithAccess = async () => {
           : '<span style="font-size:10px;color:#ccc">Tú</span>'}
       </div>
     </div>`).join('');
+};
+
+// ════════════════════════════════════════════
+//  TICKET DE IMPRESIÓN
+// ════════════════════════════════════════════
+window.verTicket = (mid) => {
+  const m = mid!==undefined ? mesas.find(x=>x.id===mid) : null;
+  // Si mid es undefined, se llama desde historial con objeto h
+  generarTicket(m);
+};
+
+window.generarTicketHistorial = (idx) => {
+  const h = getHistorialFiltrado()[idx];
+  if(!h) return;
+  const txt = buildTicketTexto({
+    nombre: h.mesa,
+    cliente: h.cliente||'',
+    telefono: h.telefono||'',
+    direccion: h.direccion||'',
+    pedido: h.pedido,
+    total: h.total,
+    billete: h.billete,
+    cambio: h.cambio,
+    hora: h.hora,
+    fecha: h.fecha,
+    cobradoPor: h.cobradoPor
+  });
+  document.getElementById('ticket-preview').textContent = txt;
+  abrir('ov-ticket');
+};
+
+function generarTicket(m){
+  if(!m){ toast('⚠️ Mesa no encontrada'); return; }
+  const total = calcTotal(m.pedido);
+  if(total===0){ toast('⚠️ No hay pedido'); return; }
+  const now = new Date();
+  const txt = buildTicketTexto({
+    nombre: m.nombre,
+    cliente: m.cliente||'',
+    telefono: m.telefono||'',
+    direccion: m.direccion||'',
+    pedido: m.pedido,
+    total,
+    billete: null, cambio: null,
+    hora: now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+    fecha: now.toLocaleDateString('es-MX'),
+    cobradoPor: sesion?.nombre||''
+  });
+  document.getElementById('ticket-preview').textContent = txt;
+  abrir('ov-ticket');
+}
+
+function buildTicketTexto({nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,cobradoPor}){
+  const linea = '--------------------------------';
+  const centro = (txt) => { const sp=Math.max(0,Math.floor((32-txt.length)/2)); return ' '.repeat(sp)+txt; };
+  const fila = (izq, der) => { const esp=Math.max(1,32-izq.length-String(der).length); return izq+' '.repeat(esp)+der; };
+  let t = '';
+  t += centro('EL CHIQUILÍN') + '
+';
+  t += centro('Tacos de Birria') + '
+';
+  t += linea + '
+';
+  t += `📅 ${fecha}   🕐 ${hora}
+`;
+  t += `📍 ${nombre}
+`;
+  if(cliente)   t += `👤 ${cliente}
+`;
+  if(telefono)  t += `📞 ${telefono}
+`;
+  if(direccion) t += `🗺 ${direccion}
+`;
+  t += linea + '
+';
+  Object.entries(pedido||{}).filter(([,v])=>v>0).forEach(([id,cant])=>{
+    const p = findProd(id);
+    if(!p) return;
+    const sub = p.precio * cant;
+    t += fila(`  ${cant}x ${p.nombre}`, `$${sub}`) + '
+';
+  });
+  t += linea + '
+';
+  t += fila('  TOTAL:', `$${total}`) + '
+';
+  if(billete){ t += fila('  Pagó:', `$${billete}`) + '
+'; }
+  if(cambio!=null&&cambio>=0){ t += fila('  Cambio:', `$${cambio}`) + '
+'; }
+  t += linea + '
+';
+  if(cobradoPor) t += `  Atendió: ${cobradoPor}
+`;
+  t += centro('¡Gracias por su preferencia!') + '
+';
+  t += centro('Vuelva pronto 🌮') + '
+';
+  return t;
+}
+
+window.imprimirTicket = () => {
+  const texto = document.getElementById('ticket-preview').textContent;
+  const win = window.open('','_blank','width=400,height=600');
+  win.document.write(`<!DOCTYPE html><html><head><title>Ticket El Chiquilín</title>
+  <style>
+    body{font-family:'Courier New',monospace;font-size:13px;padding:16px;white-space:pre;line-height:1.6;}
+    @media print{body{padding:0;}}
+  </style></head><body>${texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</body></html>`);
+  win.document.close();
+  setTimeout(()=>{ win.focus(); win.print(); },300);
+};
+
+// ════════════════════════════════════════════
+//  GESTIÓN DE MESAS (agregar/quitar)
+// ════════════════════════════════════════════
+let mesasTemp = []; // copia local para editar antes de guardar en la nube
+
+
+
+window.abrirAgregarMesa = () => {
+  document.getElementById('nm-nombre').value='';
+  document.getElementById('nm-tipo').value='mesa';
+  abrir('ov-nueva-mesa');
+};
+
+window.guardarNuevaMesa = () => {
+  const nombre = document.getElementById('nm-nombre').value.trim();
+  if(!nombre){ toast('⚠️ Escribe el nombre'); return; }
+  const tipo = document.getElementById('nm-tipo').value;
+  const maxId = mesasTemp.reduce((m,x)=>Math.max(m,x.id),0);
+  mesasTemp.push({id:maxId+1, nombre, pedido:{}, abierta:false, tipo, cliente:''});
+  cerrar('ov-nueva-mesa');
+  renderMesasAdmin();
+  toast('✅ Mesa agregada — presiona "Guardar en la nube"');
+};
+
+window.quitarMesaTemp = (id) => {
+  const m = mesasTemp.find(x=>x.id===id);
+  if(m?.abierta){ toast('⚠️ Esa mesa tiene pedido activo'); return; }
+  if(!confirm('¿Quitar esta mesa?')) return;
+  mesasTemp = mesasTemp.filter(x=>x.id!==id);
+  renderMesasAdmin();
+};
+
+function renderMesasAdmin(){
+  const lista = document.getElementById('mesas-admin-lista');
+  if(!lista) return;
+  lista.innerHTML = mesasTemp.map(m=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--gris);border-radius:9px;margin-bottom:6px;">
+      <span style="font-size:14px;">${m.tipo==='llevar'?'🛍️':'🍽️'}</span>
+      <span style="flex:1;font-weight:700;font-size:13px;">${m.nombre}</span>
+      ${m.abierta?'<span style="font-size:10px;background:#fde8e8;color:var(--rojo-d);padding:2px 7px;border-radius:50px;font-weight:800;">Con pedido</span>':''}
+      <button class="btn-sm btn-del" onclick="quitarMesaTemp(${m.id})">🗑️</button>
+    </div>`).join('');
+}
+
+window.aplicarCambiosMesas = async () => {
+  if(!confirm('¿Guardar los cambios de mesas en la nube? Los pedidos activos se conservan.')) return;
+  await setDoc(doc(db,'config','mesas'), {lista: mesasTemp});
+  toast('✅ Mesas actualizadas en la nube');
 };
 
 window.resetearMesas = async () => {
@@ -1347,7 +1602,7 @@ window.guardarUsuario = async () => {
 };
 
 // ── Cerrar modales al click fuera ──
-['ov-prod','ov-ajuste','ov-mesa','ov-menuitem','ov-usuario'].forEach(id=>{
+['ov-prod','ov-ajuste','ov-mesa','ov-menuitem','ov-usuario','ov-ticket','ov-nueva-mesa'].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener('click',function(e){if(e.target===this)cerrar(id);});
 });
