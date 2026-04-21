@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Firebase 2</title>
+<style>
+body{font-family:monospace;padding:16px;background:#111;color:#eee;font-size:13px;}
+.ok{color:#4caf50;}.err{color:#f44336;}.warn{color:#ff9800;}
+h2{color:#f5c800;font-family:sans-serif;}
+#log{white-space:pre-wrap;line-height:1.8;}
+</style>
+</head>
+<body>
+<h2>🔍 Diagnóstico Profundo</h2>
+<div id="log"></div>
+<script type="module">
+const L = document.getElementById('log');
+const log = (m,c='')=>{ L.innerHTML+=`<span class="${c}">${m}</span>\n`; };
+const ok = m=>log('✅ '+m,'ok');
+const err = m=>log('❌ '+m,'err');
+const warn = m=>log('⚠️  '+m,'warn');
+const info = m=>log('   '+m);
+
+// Capturar errores globales
+window.onerror = (msg,src,line,col,e)=>{
+  err(`Error global: ${msg}`);
+  info(`Línea: ${line}, Col: ${col}`);
+};
+window.addEventListener('unhandledrejection', e=>{
+  err('Promise rechazada: '+e.reason);
+});
+
+try {
+  // PASO 1: Firebase base
+  log('\n--- PASO 1: Firebase App ---');
+  const {initializeApp} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+  ok('firebase-app importado');
+  
+  const cfg = {
+    apiKey:"AIzaSyACS2ESpu_EsMmXCHYZniJ921sygQ61s_w",
+    authDomain:"tacos-chiquilin-146a1.firebaseapp.com",
+    projectId:"tacos-chiquilin-146a1",
+    storageBucket:"tacos-chiquilin-146a1.firebasestorage.app",
+    messagingSenderId:"581230931492",
+    appId:"1:581230931492:web:c0a78c70e58ad35061b2b1"
+  };
+  const app = initializeApp(cfg);
+  ok('App inicializada');
+
+  // PASO 2: Auth
+  log('\n--- PASO 2: Auth ---');
+  const {getAuth, onAuthStateChanged} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+  ok('firebase-auth importado');
+  const auth = getAuth(app);
+  ok('Auth listo');
+
+  // PASO 3: Firestore  
+  log('\n--- PASO 3: Firestore ---');
+  const {getFirestore, doc, getDoc, setDoc} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  ok('firebase-firestore importado');
+  const db = getFirestore(app);
+  ok('Firestore listo');
+
+  // PASO 4: onAuthStateChanged
+  log('\n--- PASO 4: Estado de sesión ---');
+  await new Promise((resolve) => {
+    const t = setTimeout(()=>{ warn('Timeout 8s'); resolve(); }, 8000);
+    onAuthStateChanged(auth, user => {
+      clearTimeout(t);
+      if(user) ok('Sesión activa: '+user.email);
+      else ok('Sin sesión (normal)');
+      resolve();
+    }, e => { clearTimeout(t); err('Auth error: '+e.message); resolve(); });
+  });
+
+  // PASO 5: Leer Firestore sin sesión
+  log('\n--- PASO 5: Firestore sin sesión ---');
+  try {
+    await getDoc(doc(db,'config','menu'));
+    ok('Lectura OK');
+  } catch(e) {
+    warn('Sin permisos sin sesión (normal): '+e.code);
+  }
+
+  // PASO 6: Login de prueba
+  log('\n--- PASO 6: Login email/password ---');
+  const {signInWithEmailAndPassword} = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+  info('Intentando login con admin/admin123...');
+  
+  // Buscar el email en usermap
+  try {
+    const mapDoc = await getDoc(doc(db,'usuarios_usermap','admin'));
+    if(mapDoc.exists()){
+      const email = mapDoc.data().email;
+      ok('Email encontrado: '+email);
+      try {
+        const cred = await signInWithEmailAndPassword(auth, email, 'admin123');
+        ok('LOGIN EXITOSO: '+cred.user.email);
+        
+        // PASO 7: Leer Firestore con sesión
+        log('\n--- PASO 7: Firestore con sesión ---');
+        try {
+          const menuSnap = await getDoc(doc(db,'config','menu'));
+          ok('Menu: '+(menuSnap.exists()?'encontrado':'vacío'));
+          const mesasSnap = await getDoc(doc(db,'config','mesas'));
+          ok('Mesas: '+(mesasSnap.exists()?'encontradas':'vacías'));
+        } catch(e) { err('Firestore con sesión: '+e.message); }
+      } catch(e) { err('Login fallido: '+e.message+' ('+e.code+')'); }
+    } else {
+      warn('Usuario "admin" no encontrado en usermap');
+      warn('→ Necesitas crear el usuario admin desde el sistema');
+    }
+  } catch(e) {
+    warn('usermap no accesible: '+e.message);
+  }
+
+  log('\n--- FIN DEL DIAGNÓSTICO ---');
+  ok('Todo completado. Manda foto de esta pantalla.');
+
+} catch(e) {
+  err('ERROR CRÍTICO: '+e.message);
+  err('Stack: '+e.stack);
+}
+</script>
+</body>
+</html>
