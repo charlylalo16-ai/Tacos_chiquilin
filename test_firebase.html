@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Firebase</title>
+<style>
+body{font-family:sans-serif;padding:20px;background:#1a1a1a;color:#fff;}
+.ok{color:#4caf50;font-weight:bold;}
+.err{color:#f44336;font-weight:bold;}
+.warn{color:#ff9800;font-weight:bold;}
+.box{background:#2a2a2a;border-radius:10px;padding:16px;margin:10px 0;font-size:14px;}
+h2{color:#f5c800;}
+</style>
+</head>
+<body>
+<h2>🔥 Test de Firebase — El Chiquilín</h2>
+<div class="box" id="log">Iniciando pruebas...<br></div>
+
+<script type="module">
+const log = (msg, tipo='') => {
+  const el = document.getElementById('log');
+  el.innerHTML += `<span class="${tipo}">${msg}</span><br>`;
+};
+
+log('1. Importando Firebase SDK...');
+try {
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+  log('✅ SDK importado OK', 'ok');
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyACS2ESpu_EsMmXCHYZniJ921sygQ61s_w",
+    authDomain: "tacos-chiquilin-146a1.firebaseapp.com",
+    projectId: "tacos-chiquilin-146a1",
+    storageBucket: "tacos-chiquilin-146a1.firebasestorage.app",
+    messagingSenderId: "581230931492",
+    appId: "1:581230931492:web:c0a78c70e58ad35061b2b1"
+  };
+
+  log('2. Inicializando app...');
+  const app = initializeApp(firebaseConfig);
+  log('✅ App inicializada OK', 'ok');
+
+  log('3. Importando Auth...');
+  const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+  log('✅ Auth importado OK', 'ok');
+
+  log('4. Conectando con Auth...');
+  const auth = getAuth(app);
+  log('✅ Auth creado OK', 'ok');
+
+  log('5. Esperando estado de sesión (máx 10 seg)...');
+  const timeout = setTimeout(() => {
+    log('❌ TIMEOUT — Firebase Auth no responde después de 10 segundos', 'err');
+    log('→ Posible problema: dominio no autorizado, red bloqueada o API key inválida', 'warn');
+  }, 10000);
+
+  onAuthStateChanged(auth, (user) => {
+    clearTimeout(timeout);
+    if(user){
+      log(`✅ Sesión activa: ${user.email}`, 'ok');
+    } else {
+      log('✅ Auth responde — no hay sesión activa (normal si no has entrado)', 'ok');
+      log('→ Firebase está funcionando correctamente', 'ok');
+      log('→ Puedes abrir el sistema principal ahora', 'ok');
+    }
+  }, (error) => {
+    clearTimeout(timeout);
+    log('❌ Error en Auth: ' + error.message, 'err');
+    log('Código: ' + error.code, 'warn');
+  });
+
+  log('6. Probando Firestore...');
+  const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  const db = getFirestore(app);
+  try {
+    const snap = await getDoc(doc(db,'config','menu'));
+    log('✅ Firestore conectado — datos: ' + (snap.exists() ? 'encontrados' : 'vacíos (primera vez)'), 'ok');
+  } catch(e) {
+    log('⚠️ Firestore error: ' + e.message, 'warn');
+    log('→ Esto puede ser normal si no hay sesión activa', 'warn');
+  }
+
+} catch(e) {
+  log('❌ Error general: ' + e.message, 'err');
+  log('Stack: ' + e.stack, 'warn');
+}
+</script>
+</body>
+</html>
