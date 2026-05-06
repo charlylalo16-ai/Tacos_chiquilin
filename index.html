@@ -548,77 +548,12 @@ footer{
     <button class="menu-tab" onclick="filterMenu('bebidas')">Bebidas</button>
     <button class="menu-tab" onclick="filterMenu('especiales')">Especiales</button>
   </div>
-  <div class="menu-grid" id="menuGrid">
-    <!-- Tacos -->
-    <div class="menu-card" data-cat="tacos">
-      <div class="menu-card-img">🌮</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Tacos Suaves</div>
-        <div class="menu-card-desc">Tacos de birria con doble tortilla, cebolla y cilantro. Acompañados de consomé caliente.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$18</div>
-          <div class="menu-card-tag">Popular</div>
-        </div>
-      </div>
-    </div>
-    <div class="menu-card" data-cat="tacos">
-      <div class="menu-card-img">🌮</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Quesabirrias</div>
-        <div class="menu-card-desc">Taco dorado con doble tortilla y queso gratinado. La versión premium del taco clásico.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$21</div>
-          <div class="menu-card-tag">⭐ Top</div>
-        </div>
-      </div>
-    </div>
-    <div class="menu-card" data-cat="tacos">
-      <div class="menu-card-img">🌋</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Volcanes de Birria</div>
-        <div class="menu-card-desc">Tostada dorada con birria y queso gratinado. Crujiente por fuera, jugosa por dentro.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$21</div>
-          <div class="menu-card-tag">🔥 Nuevo</div>
-        </div>
-      </div>
-    </div>
-    <!-- Especiales -->
-    <div class="menu-card" data-cat="especiales">
-      <div class="menu-card-img">🍜</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Maruchabirria</div>
-        <div class="menu-card-desc">Sopa instantánea Maruchan con birria. La combinación más original y deliciosa del menú.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$45</div>
-          <div class="menu-card-tag">Especial</div>
-        </div>
-      </div>
-    </div>
-    <!-- Bebidas -->
-    <div class="menu-card" data-cat="bebidas">
-      <div class="menu-card-img">🥤</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Refresco</div>
-        <div class="menu-card-desc">Refresco frío de lata o botella para acompañar tu orden.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$20-35</div>
-          <div class="menu-card-tag">Bebida</div>
-        </div>
-      </div>
-    </div>
-    <div class="menu-card" data-cat="bebidas">
-      <div class="menu-card-img">🍲</div>
-      <div class="menu-card-body">
-        <div class="menu-card-name">Consomé</div>
-        <div class="menu-card-desc">Consomé de birria caliente. Chico o grande. El complemento perfecto de tu taco.</div>
-        <div class="menu-card-footer">
-          <div class="menu-card-price">$20-35</div>
-          <div class="menu-card-tag">Bebida</div>
-        </div>
-      </div>
-    </div>
+  <!-- Indicador de carga -->
+  <div id="menu-loading" style="text-align:center;padding:48px;color:rgba(255,249,238,0.3);">
+    <div style="font-size:36px;margin-bottom:12px;animation:heroFloat 1.5s ease-in-out infinite;">🌮</div>
+    <p style="font-family:'Fredoka One',cursive;font-size:16px;">Cargando menú...</p>
   </div>
+  <div class="menu-grid" id="menuGrid" style="display:none;"></div>
 </section>
 
 <!-- DELIVERY -->
@@ -725,16 +660,110 @@ window.closeMenu=()=>{
   document.getElementById('navMobile').classList.remove('open');
 };
 
-// ── FILTRO MENÚ ──
-window.filterMenu=(cat)=>{
-  document.querySelectorAll('.menu-tab').forEach(t=>t.classList.remove('active'));
-  event.target.classList.add('active');
+// ── MENÚ DESDE FIREBASE ──
+let menuActivo = 'todos';
+
+// Emojis y descripciones por producto
+const INFO = {
+  // Tacos
+  'taco':      {emoji:'🌮', desc:'Tacos de birria con doble tortilla, cebolla y cilantro.', cat:'tacos', tag:'Popular'},
+  'volcan':    {emoji:'🌋', desc:'Tostada dorada con birria y queso gratinado. Crujiente por fuera, jugosa por dentro.', cat:'tacos', tag:'🔥 Especial'},
+  'sube':      {emoji:'🌮', desc:'Taco de birria estilo sube, suave y jugoso.', cat:'tacos', tag:'⭐ Top'},
+  'quesadilla':{emoji:'🧀', desc:'Quesadilla de birria con queso gratinado. Irresistible.', cat:'tacos', tag:'⭐ Top'},
+  // Consomé
+  'cs':        {emoji:'🍲', desc:'Consomé de birria caliente, el complemento perfecto.', cat:'consome', tag:'Consomé'},
+  'cg':        {emoji:'🍲', desc:'Consomé de birria caliente, el complemento perfecto.', cat:'consome', tag:'Consomé'},
+  'consome_ch':{emoji:'🍲', desc:'Consomé de birria caliente, el complemento perfecto.', cat:'consome', tag:'Consomé'},
+  'consome_gr':{emoji:'🍲', desc:'Consomé de birria caliente, el complemento perfecto.', cat:'consome', tag:'Consomé'},
+  // Bebidas
+  'ref400':    {emoji:'🥤', desc:'Refresco frío 400ml.', cat:'bebidas', tag:'Bebida'},
+  'ref600':    {emoji:'🥤', desc:'Refresco frío 600ml.', cat:'bebidas', tag:'Bebida'},
+  'ref1l':     {emoji:'🥤', desc:'Refresco frío 1 litro.', cat:'bebidas', tag:'Bebida'},
+  'agua400':   {emoji:'💧', desc:'Agua fresca 400ml.', cat:'bebidas', tag:'Bebida'},
+  'agua600':   {emoji:'💧', desc:'Agua fresca 600ml.', cat:'bebidas', tag:'Bebida'},
+  'agua1l':    {emoji:'💧', desc:'Agua fresca 1 litro.', cat:'bebidas', tag:'Bebida'},
+};
+
+// Categoría de tab → categorías de producto
+const CAT_MAP = {
+  todos: ['tacos','consome','bebidas','especiales'],
+  tacos: ['tacos'],
+  bebidas: ['bebidas'],
+  especiales: ['consome','especiales'],
+};
+
+function buildMenuCards(menu){
+  const grid = document.getElementById('menuGrid');
+  const loading = document.getElementById('menu-loading');
+  if(!menu){ loading.innerHTML='<p style="color:rgba(255,249,238,0.4)">No se pudo cargar el menú.</p>'; return; }
+
+  const todos = [
+    ...(menu.tacos||[]).map(p=>({...p, catTab:'tacos'})),
+    ...(menu.consome||[]).map(p=>({...p, catTab:'consome'})),
+    ...(menu.bebidas||[]).map(p=>({...p, catTab:'bebidas'})),
+  ];
+
+  grid.innerHTML = todos.map((p,i) => {
+    const info = INFO[p.id] || {emoji:'🌮', desc:'', cat: p.catTab||'tacos', tag:'Producto'};
+    // Nombre limpio para consomé (sin tamaño)
+    let nombre = p.nombre;
+    if(p.catTab==='consome') nombre = 'Consomé';
+    return `<div class="menu-card" data-cat="${info.cat}" style="animation-delay:${i*0.06}s">
+      <div class="menu-card-img">${info.emoji}</div>
+      <div class="menu-card-body">
+        <div class="menu-card-name">${nombre}</div>
+        <div class="menu-card-desc">${info.desc}</div>
+        <div class="menu-card-footer">
+          <div class="menu-card-price">$${p.precio}</div>
+          <div class="menu-card-tag">${info.tag}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Quitar consomés duplicados (mostrar solo uno)
+  const consomes = grid.querySelectorAll('[data-cat="consome"]');
+  if(consomes.length > 1){
+    for(let i=1;i<consomes.length;i++) consomes[i].remove();
+  }
+
+  loading.style.display='none';
+  grid.style.display='grid';
+  filterMenu('todos', false);
+}
+
+window.filterMenu=(cat, fromClick=true)=>{
+  menuActivo=cat;
+  if(fromClick){
+    document.querySelectorAll('.menu-tab').forEach(t=>t.classList.remove('active'));
+    event?.target?.classList.add('active');
+  }
+  const cats = CAT_MAP[cat]||['tacos'];
   document.querySelectorAll('.menu-card').forEach((card,i)=>{
-    const show=cat==='todos'||card.dataset.cat===cat;
+    const show = cat==='todos'||cats.includes(card.dataset.cat);
     card.style.display=show?'block':'none';
-    if(show){card.style.animationDelay=(i*0.08)+'s';card.classList.remove('cardIn');void card.offsetWidth;card.style.animation='cardIn .4s ease '+(i*0.06)+'s both';}
+    if(show) card.style.animation=`cardIn .4s ease ${i*0.05}s both`;
   });
 };
+
+// Cargar menú desde Firebase en tiempo real
+import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js').then(({initializeApp})=>{
+  import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({getFirestore,doc,onSnapshot})=>{
+    const app = initializeApp({
+      apiKey:"AIzaSyACS2ESpu_EsMmXCHYZniJ921sygQ61s_w",
+      authDomain:"tacos-chiquilin-146a1.firebaseapp.com",
+      projectId:"tacos-chiquilin-146a1",
+      storageBucket:"tacos-chiquilin-146a1.firebasestorage.app",
+      messagingSenderId:"581230931492",
+      appId:"1:581230931492:web:c0a78c70e58ad35061b2b1"
+    }, 'public-site');
+    const db = getFirestore(app);
+    onSnapshot(doc(db,'config','menu'), snap=>{
+      if(snap.exists()) buildMenuCards(snap.data());
+      else buildMenuCards(null);
+    }, ()=>buildMenuCards(null));
+  });
+}).catch(()=>buildMenuCards(null));
 
 // ── REVEAL ON SCROLL ──
 const reveals=document.querySelectorAll('.reveal');
