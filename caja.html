@@ -192,7 +192,7 @@ let btChar=null,autoPrint=false;
 let pendientes=[],impresos=[],menu=null;
 let unsubHist=null,unsubMenu=null;
 let imprimiendoId=null;
-let totalHoy=0,countImp=0;
+let countImp=0;
 // Turno local — se asigna en caja al recibir ticket
 function siguienteTurnoLocal(){
   const hoy=new Date().toLocaleDateString('es-MX').replace(/\//g,'-');
@@ -253,8 +253,6 @@ function suscribir(){
       // Excluir los ya procesados
       pendientes=deHoy.filter(h=>!h.impreso&&!h.descartado&&!yaListos.has(h._id));
       impresos=deHoy.filter(h=>h.impreso&&!h.descartado);
-      impresos=deHoy.filter(h=>h.impreso);
-      totalHoy=deHoy.reduce((s,h)=>s+(h.total||0),0);
       countImp=impresos.length;
       renderEstado();
       renderPendientes();

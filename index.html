@@ -1210,23 +1210,6 @@ window.quitarPlatoGlobal=async(id,idx)=>{
   renderPedMod();
 };
 
-window.agregarPlatoInline=async(id, nombre)=>{
-  // Función legacy — redirige a mix
-  window.agregarPlatoMix();
-  return;
-  const n=0;
-  // Guardar platos en la mesa en Firebase
-  const m=mesas?.find(x=>x.id===mesaAct);
-  if(m){
-    m.pedido=JSON.parse(JSON.stringify(pedTmp));
-    m.platos=JSON.parse(JSON.stringify(platosTemp));
-    m.abierta=true;
-    await saveMesas();
-  }
-  renderPedMod();
-  toast('✅ Plato agregado: '+n+'x '+nombre);
-};
-
 // quitarPlato reemplazado por quitarPlatoGlobal
 
 
