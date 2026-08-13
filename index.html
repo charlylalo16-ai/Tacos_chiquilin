@@ -872,7 +872,7 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged,updateProfile}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import{getFirestore,doc,getDoc,setDoc,onSnapshot,collection,addDoc,deleteDoc,serverTimestamp,query,orderBy,getDocs,limit,runTransaction}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import{getFirestore,doc,getDoc,setDoc,onSnapshot,collection,addDoc,deleteDoc,serverTimestamp,query,orderBy,getDocs,limit}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const CFG={apiKey:"AIzaSyACS2ESpu_EsMmXCHYZniJ921sygQ61s_w",authDomain:"tacos-chiquilin-146a1.firebaseapp.com",projectId:"tacos-chiquilin-146a1",storageBucket:"tacos-chiquilin-146a1.firebasestorage.app",messagingSenderId:"581230931492",appId:"1:581230931492:web:c0a78c70e58ad35061b2b1"};
 const app=initializeApp(CFG);
@@ -926,6 +926,7 @@ window.loginEmail=async()=>{
 window.logout=async()=>{
   if(!confirm('¿Cerrar sesión?'))return;
   unsubs.forEach(u=>u&&u());unsubs=[];
+  if(unsubFiados){unsubFiados();unsubFiados=null;}
   await signOut(auth);
   S=null;menu=null;mesas=null;inv=null;hist=[];
   $('app').style.display='none';
@@ -1224,9 +1225,6 @@ window.mandarACaja=async()=>{
   toast('📤 Ticket mandado a caja');
 };
 
-// Cache de ticket_caja por mesa {mesaNombre: docId, turno}
-const ticketCajaCache={};
-
 // Enviar ticket del pedido actual a la cola de impresión de caja
 async function enviarTicketPedido(){
   const m=mesas?.find(x=>x.id===mesaAct);
@@ -1258,12 +1256,6 @@ async function enviarTicketPedido(){
     console.error('ticket_caja ERROR:',e.code,e.message);
     toast('❌ Error al mandar: '+e.message);
   }
-}
-
-// Limpiar caché cuando se cobra la mesa
-function limpiarCacheTicketCaja(mesaNombre){
-  const hoy=new Date().toLocaleDateString('es-MX');
-  delete ticketCajaCache[mesaNombre+'_'+hoy];
 }
 
 window.chQty=(id,d)=>{pedTmp[id]=(pedTmp[id]||0)+d;if(pedTmp[id]<0)pedTmp[id]=0;const e=$('q-'+id);if(e)e.textContent=pedTmp[id];updTot();};
@@ -1392,29 +1384,6 @@ async function getSiguienteFolio(){
   return siguiente;
 }
 
-// Número de turno único con transacción (evita duplicados)
-async function getSiguienteTurno(){
-  const ref=doc(db,'config','turno');
-  const hoy=new Date().toLocaleDateString('es-MX');
-  try{
-    const turno=await runTransaction(db,async tx=>{
-      const d=await tx.get(ref);
-      let siguiente=1;
-      if(d.exists()&&d.data().fecha===hoy){
-        siguiente=(d.data().actual||0)+1;
-      }
-      tx.set(ref,{actual:siguiente,fecha:hoy});
-      return siguiente;
-    });
-    return turno;
-  }catch(e){
-    // Fallback si falla la transacción
-    const d=await getDoc(ref);
-    const siguiente=d.exists()&&d.data().fecha===hoy?(d.data().actual||0)+1:1;
-    await setDoc(ref,{actual:siguiente,fecha:hoy});
-    return siguiente;
-  }
-}
 const saveMesas=async()=>setDoc(doc(db,'config','mesas'),{lista:mesas});
 const saveInv=async()=>setDoc(doc(db,'config','inventario'),{lista:inv});
 
@@ -1459,9 +1428,11 @@ window.guardarProd=async()=>{
   const nom=$('p-nom').value.trim();if(!nom){toast('⚠️ Escribe el nombre');return;}
   const costoVal=parseFloat($('p-costo').value)||0;
   const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null};
-  if(editProdId){const i=inv.findIndex(x=>x.id===editProdId);inv[i]={...inv[i],...obj};toast('✅ Actualizado');}
-  else{obj.id='iv_'+Date.now();inv.push(obj);toast('✅ Agregado');}
-  await saveInv();c('ov-prod');
+  try{
+    if(editProdId){const i=inv.findIndex(x=>x.id===editProdId);inv[i]={...inv[i],...obj};await saveInv();toast('✅ Actualizado');}
+    else{obj.id='iv_'+Date.now();inv.push(obj);await saveInv();toast('✅ Agregado');}
+    c('ov-prod');
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 window.delProd=async id=>{if(!confirm('¿Eliminar?'))return;inv=inv.filter(x=>x.id!==id);await saveInv();toast('🗑️ Eliminado');};
 window.abrirAj=id=>{ajId=id;const p=inv.find(x=>x.id===id);$('aj-nom').textContent=p.nombre+' — Stock: '+p.stock+' '+p.unidad;$('aj-cant').value='';a('ov-ajuste');};
@@ -1486,8 +1457,13 @@ window.renderPrecios=()=>{
   r(menu.tacos,'pr-tacos');r(menu.bebidas,'pr-bebidas');r(menu.consome,'pr-consome');
 };
 window.guardarPrecios=async()=>{
-  [...(menu.tacos||[]),...(menu.bebidas||[]),...(menu.consome||[])].forEach(p=>{const e=$('pr-'+p.id);if(e)p.precio=parseFloat(e.value)||p.precio;});
-  await saveMenu();toast('💰 Precios guardados');
+  [...(menu.tacos||[]),...(menu.bebidas||[]),...(menu.consome||[])].forEach(p=>{
+    const e=$('pr-'+p.id);if(!e)return;
+    const n=parseFloat(e.value);
+    if(!isNaN(n)&&n>=0)p.precio=n;
+  });
+  try{await saveMenu();toast('💰 Precios guardados');}
+  catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 window.nuevoItem=cat=>{iCat=cat;iId=null;$('item-tit').textContent='➕ Nuevo producto';$('i-nom').value='';$('i-pr').value='';a('ov-item');};
 window.editItem=id=>{const p=findP(id);if(!p)return;iId=id;iCat=(menu.tacos||[]).find(x=>x.id===id)?'tacos':(menu.bebidas||[]).find(x=>x.id===id)?'bebidas':'consome';$('item-tit').textContent='✏️ '+p.nombre;$('i-nom').value=p.nombre;$('i-pr').value=p.precio;a('ov-item');};
@@ -1931,12 +1907,14 @@ function buildEscPos(datos){
         const partes=Object.entries(mix).map(([mid,mc])=>{const mp=findP(mid);if(!mp)return'';return mc.cant+'x '+(mp.nombre)+(mc.maciza>0?' '+mc.maciza+'mza':'');}).filter(Boolean).join(', ');
         const precio=Object.entries(mix).reduce((s,[mid,mc])=>{const mp=findP(mid);return s+(mp?mp.precio*mc.cant:0);},0);
         add(row('  1 plato: '+partes,'$'+precio)+NL);
+        if(plato.nota) add('  📝 '+plato.nota+NL);
       } else {
         const cant=typeof plato==='object'?plato.cant:plato;
         const maciza=typeof plato==='object'?plato.maciza:0;
         const normal=cant-maciza;
         const det=maciza>0?(normal>0?': '+normal+' nrm, '+maciza+' mza':': '+maciza+' mza'):'';
         add(row('  1 plato ('+cant+'x '+p.nombre+det+')','$'+(p.precio*cant))+NL);
+        if(plato.nota) add('  📝 '+plato.nota+NL);
       }
     });
   });
@@ -2158,15 +2136,17 @@ window.guardarGasto=async()=>{
   if(!desc){toast('⚠️ Describe qué compraste');return;}
   if(monto<=0){toast('⚠️ Escribe el monto');return;}
   const now=new Date();
-  await addDoc(collection(db,'gastos'),{
-    descripcion:desc, monto,
-    hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-    fecha:now.toLocaleDateString('es-MX'),
-    anotadoPor:S?.nombre||'',
-    ts:serverTimestamp()
-  });
-  c('ov-gasto');
-  toast('🛒 Gasto anotado: $'+monto);
+  try{
+    await addDoc(collection(db,'gastos'),{
+      descripcion:desc, monto,
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+      fecha:now.toLocaleDateString('es-MX'),
+      anotadoPor:S?.nombre||'',
+      ts:serverTimestamp()
+    });
+    c('ov-gasto');
+    toast('🛒 Gasto anotado: $'+monto);
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.renderGastos=()=>{
@@ -2378,14 +2358,16 @@ window.guardarFiado=async()=>{
   // Convertir fecha a formato legible
   const [y,m,d]=fechaVal.split('-');
   const fechaStr=d+'/'+m+'/'+y;
-  if(editFiadoId){
-    await setDoc(doc(db,'fiados',editFiadoId),{nombre:nom,detalle:det,monto,fecha:fechaStr,mesero:S?.nombre||''},{merge:true});
-    toast('✅ Fiado actualizado');
-  } else {
-    await addDoc(collection(db,'fiados'),{nombre:nom,detalle:det,monto,abonado:0,abonos:[],fecha:fechaStr,mesero:S?.nombre||'',pagado:false,ts:serverTimestamp()});
-    toast('✅ Fiado registrado — $'+monto+' de '+nom);
-  }
-  c('ov-fiado');
+  try{
+    if(editFiadoId){
+      await setDoc(doc(db,'fiados',editFiadoId),{nombre:nom,detalle:det,monto,fecha:fechaStr,mesero:S?.nombre||''},{merge:true});
+      toast('✅ Fiado actualizado');
+    } else {
+      await addDoc(collection(db,'fiados'),{nombre:nom,detalle:det,monto,abonado:0,abonos:[],fecha:fechaStr,mesero:S?.nombre||'',pagado:false,ts:serverTimestamp()});
+      toast('✅ Fiado registrado — $'+monto+' de '+nom);
+    }
+    c('ov-fiado');
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.abrirAbono=(id)=>{
@@ -2404,16 +2386,20 @@ window.aplicarAbono=async()=>{
   const nuevoAbonado=(f.abonado||0)+monto;
   const abonos=[...(f.abonos||[]),{monto,fecha:new Date().toLocaleDateString('es-MX')}];
   const pagado=nuevoAbonado>=f.monto;
-  await setDoc(doc(db,'fiados',abonoFiadoId),{abonado:nuevoAbonado,abonos,pagado},{merge:true});
-  c('ov-abono');
-  toast(pagado?'🎉 '+f.nombre+' pagó completo!':'💵 Abono registrado — resta $'+(f.monto-nuevoAbonado));
+  try{
+    await setDoc(doc(db,'fiados',abonoFiadoId),{abonado:nuevoAbonado,abonos,pagado},{merge:true});
+    c('ov-abono');
+    toast(pagado?'🎉 '+f.nombre+' pagó completo!':'💵 Abono registrado — resta $'+(f.monto-nuevoAbonado));
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.marcarPagado=async(id)=>{
   const f=fiados.find(x=>x._id===id);if(!f)return;
   if(!confirm('¿Marcar a '+f.nombre+' como pagado?'))return;
-  await setDoc(doc(db,'fiados',id),{pagado:true,abonado:f.monto},{merge:true});
-  toast('✅ '+f.nombre+' marcado como pagado');
+  try{
+    await setDoc(doc(db,'fiados',id),{pagado:true,abonado:f.monto},{merge:true});
+    toast('✅ '+f.nombre+' marcado como pagado');
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.delFiado=async(id)=>{
