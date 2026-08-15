@@ -387,6 +387,7 @@ let sonidoCtx=null;
 
 // HELPERS
 const $=id=>document.getElementById(id);
+const escHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);};
 const findP=id=>[...(menu?.tacos||[]),...(menu?.bebidas||[]),...(menu?.consome||[])].find(p=>p.id===id);
 const calcT=ped=>Object.entries(ped||{}).reduce((s,[id,c])=>{const p=findP(id);return s+(p?p.precio*c:0);},0);
@@ -570,7 +571,7 @@ function renderPedidos(){
       <div class="pedido-header">
         <div>
           <div class="pedido-mesa ${lv?'pedido-llevar':''}">${lv?'🛍️':'🍽️'} ${m.nombre}</div>
-          ${m.cliente?`<div class="pedido-cliente">👤 ${m.cliente}</div>`:''}
+          ${m.cliente?`<div class="pedido-cliente">👤 ${escHtml(m.cliente)}</div>`:''}
         </div>
         <div class="pedido-tiempo">$${tot}</div>
       </div>
@@ -589,16 +590,18 @@ function renderPedidos(){
 
 window.marcarListo=async(mid)=>{
   const m=mesas?.find(x=>x.id===mid);if(!m)return;
-  // Enviar mensaje al chat
-  await addDoc(collection(db,'chat'),{
-    texto:`✅ Listo el pedido de ${m.nombre}`,
-    nombre:'Cocina 🍳',uid:'cocina',
-    tipo:'sistema',
-    ts:serverTimestamp()
-  });
-  // Mostrar banner de llamada
-  mostrarLlamada(m.nombre);
-  toast('✅ Mesero notificado');
+  try{
+    // Enviar mensaje al chat
+    await addDoc(collection(db,'chat'),{
+      texto:`✅ Listo el pedido de ${m.nombre}`,
+      nombre:'Cocina 🍳',uid:'cocina',
+      tipo:'sistema',
+      ts:serverTimestamp()
+    });
+    // Mostrar banner de llamada
+    mostrarLlamada(m.nombre);
+    toast('✅ Mesero notificado');
+  }catch(e){toast('❌ Error al notificar: '+e.message);}
 };
 
 // CHAT
@@ -607,12 +610,12 @@ function renderChat(msgs){
   const wasBottom=c.scrollHeight-c.scrollTop-c.clientHeight<60;
   c.innerHTML=msgs.map(m=>{
     if(m.tipo==='sistema'){
-      return`<div class="msg-sistema">${m.texto}</div>`;
+      return`<div class="msg-sistema">${escHtml(m.texto)}</div>`;
     }
     const mio=m.uid===S?.uid;
     return`<div class="msg ${mio?'mio':'otro'}">
-      <div class="msg-burbuja">${m.texto}</div>
-      <div class="msg-meta">${m.nombre} · ${m.hora||''}</div>
+      <div class="msg-burbuja">${escHtml(m.texto)}</div>
+      <div class="msg-meta">${escHtml(m.nombre)} · ${m.hora||''}</div>
     </div>`;
   }).join('');
   if(wasBottom||tabActual==='chat') scrollChat();
@@ -624,21 +627,25 @@ window.enviarMensaje=async()=>{
   const txt=input.value.trim();if(!txt)return;
   input.value='';
   const now=new Date();
-  await addDoc(collection(db,'chat'),{
-    texto:txt,
-    nombre:S?.nombre||'Usuario',
-    uid:S?.uid||'',
-    hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-    ts:serverTimestamp()
-  });
+  try{
+    await addDoc(collection(db,'chat'),{
+      texto:txt,
+      nombre:S?.nombre||'Usuario',
+      uid:S?.uid||'',
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+      ts:serverTimestamp()
+    });
+  }catch(e){toast('❌ Error al enviar: '+e.message);}
 };
 window.enviarAtajo=async txt=>{
   const now=new Date();
-  await addDoc(collection(db,'chat'),{
-    texto:txt,nombre:S?.nombre||'Cocina',uid:S?.uid||'',
-    hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-    ts:serverTimestamp()
-  });
+  try{
+    await addDoc(collection(db,'chat'),{
+      texto:txt,nombre:S?.nombre||'Cocina',uid:S?.uid||'',
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+      ts:serverTimestamp()
+    });
+  }catch(e){toast('❌ Error al enviar: '+e.message);}
 };
 window.chatKeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.enviarMensaje();}};
 

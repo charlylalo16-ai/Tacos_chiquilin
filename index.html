@@ -886,7 +886,6 @@ let unsubs=[];
 let fEst='todos',editProdId=null,ajId=null;
 let mesaAct=null,pedTmp={};
 let iCat=null,iId=null;
-let editUsrId=null;
 let fechaMode='hoy';
 let mesasTemp=[];
 
@@ -897,6 +896,7 @@ const INV0=[{id:'ref400',nombre:'Refresco 400ml',categoria:'Bebidas',unidad:'pie
 
 // HELPERS
 const $=id=>document.getElementById(id);
+const escHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);};
 const a=id=>$(id).classList.add('open');
 window.c=id=>$(id).classList.remove('open');
@@ -1082,7 +1082,6 @@ window.abrirMesa=mid=>{
 
 function renderPedMod(){
   // Tacos: con botón de plato
-  const idsTacosMod=new Set((menu?.tacos||[]).map(x=>x.id));
   const renderTacos=(arr,el)=>{
     // Platos ya agregados
     const todosLosPlatos=Object.entries(platosTemp).flatMap(([id,lista])=>
@@ -1370,7 +1369,6 @@ const saveMenu=async()=>{
 };
 
 // Folio de ticket
-let folioActual=0;
 async function getSiguienteFolio(){
   const ref=doc(db,'config','folio');
   const hoy=new Date().toLocaleDateString('es-MX');
@@ -1380,7 +1378,6 @@ async function getSiguienteFolio(){
     siguiente=(d.data().actual||0)+1;
   }
   await setDoc(ref,{actual:siguiente,fecha:hoy});
-  folioActual=siguiente;
   return siguiente;
 }
 
@@ -1424,15 +1421,19 @@ window.renderInv=()=>{
 };
 window.abrirProd=()=>{editProdId=null;$('prod-tit').textContent='➕ Nuevo Producto';['p-nom','p-stk','p-min','p-costo'].forEach(id=>$(id).value='');a('ov-prod');};
 window.editProd=id=>{const p=inv.find(x=>x.id===id);editProdId=id;$('prod-tit').textContent='✏️ Editar';$('p-nom').value=p.nombre;$('p-cat').value=p.categoria;$('p-uni').value=p.unidad;$('p-stk').value=p.stock;$('p-min').value=p.min;$('p-costo').value=p.costo||'';a('ov-prod');};
+let guardandoProd=false;
 window.guardarProd=async()=>{
+  if(guardandoProd)return;
   const nom=$('p-nom').value.trim();if(!nom){toast('⚠️ Escribe el nombre');return;}
   const costoVal=parseFloat($('p-costo').value)||0;
   const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null};
+  guardandoProd=true;
   try{
     if(editProdId){const i=inv.findIndex(x=>x.id===editProdId);inv[i]={...inv[i],...obj};await saveInv();toast('✅ Actualizado');}
     else{obj.id='iv_'+Date.now();inv.push(obj);await saveInv();toast('✅ Agregado');}
     c('ov-prod');
   }catch(e){toast('❌ Error al guardar: '+e.message);}
+  finally{guardandoProd=false;}
 };
 window.delProd=async id=>{if(!confirm('¿Eliminar?'))return;inv=inv.filter(x=>x.id!==id);await saveInv();toast('🗑️ Eliminado');};
 window.abrirAj=id=>{ajId=id;const p=inv.find(x=>x.id===id);$('aj-nom').textContent=p.nombre+' — Stock: '+p.stock+' '+p.unidad;$('aj-cant').value='';a('ov-ajuste');};
@@ -1506,7 +1507,6 @@ window.renderHist=()=>{
   const filt=getHistFilt();
   const tot=filt.reduce((s,h)=>s+h.total,0);
   // Sumar abonos de fiados del mismo período
-  const abonosFilt=gastosDelPeriodo ? [] : []; // placeholder
   const abonosTot=fiados.reduce((s,f)=>{
     return s+(f.abonos||[]).reduce((sa,ab)=>{
       // Verificar si el abono es del período actual
@@ -1599,9 +1599,11 @@ async function cargarFondo(){
 window.guardarFondo=async()=>{
   const monto=parseFloat($('fondo-input')?.value)||0;
   const hoy=new Date().toLocaleDateString('es-MX');
-  await setDoc(doc(db,'config','fondo'),{monto,fecha:hoy,guardadoPor:S?.nombre||''});
-  const disp=$('fondo-display');if(disp)disp.textContent='$'+monto;
-  toast('💵 Fondo guardado: $'+monto);
+  try{
+    await setDoc(doc(db,'config','fondo'),{monto,fecha:hoy,guardadoPor:S?.nombre||''});
+    const disp=$('fondo-display');if(disp)disp.textContent='$'+monto;
+    toast('💵 Fondo guardado: $'+monto);
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.hacerCorte=()=>{
@@ -1675,7 +1677,7 @@ window.imprimirCorte=()=>{
   w.document.close();setTimeout(()=>{w.focus();w.print();},300);
 };
 
-window.delVenta=async id=>{if(!confirm('¿Eliminar?'))return;await deleteDoc(doc(db,'historial',id));toast('🗑️ Eliminado');};
+window.delVenta=async id=>{if(!confirm('¿Eliminar?'))return;try{await deleteDoc(doc(db,'historial',id));toast('🗑️ Eliminado');}catch(e){toast('❌ Error al eliminar: '+e.message);}};
 window.limpiarPeriodo=async()=>{
   if(!eAdmin())return;
   const f=getHistFilt();if(!f.length){toast('⚠️ Sin ventas');return;}
@@ -1864,7 +1866,6 @@ function buildEscPos(datos){
   const NL='\n';
   const W=32;
   const ln='-'.repeat(W);
-  const ctr=t=>{const s=Math.max(0,Math.floor((W-t.length)/2));return' '.repeat(s)+t;};
   const row=(a,b)=>{const e=Math.max(1,W-a.length-String(b).length);return a+' '.repeat(e)+b;};
 
   const bytes=[];
@@ -2053,7 +2054,7 @@ window.renderUsrAccess=async()=>{
     </div>
   </div>`).join('');
 };
-window.cambiarRol=async(uid,rol)=>{if(!confirm(`¿Cambiar a ${rol}?`))return;await setDoc(doc(db,'usuarios',uid),{rol},{merge:true});toast('✅ Rol actualizado');renderUsrAccess();};
+window.cambiarRol=async(uid,rol)=>{if(!confirm(`¿Cambiar a ${rol}?`))return;try{await setDoc(doc(db,'usuarios',uid),{rol},{merge:true});toast('✅ Rol actualizado');renderUsrAccess();}catch(e){toast('❌ Error al guardar: '+e.message);}};
 window.delUsr=async(uid,nom)=>{if(!confirm(`¿Eliminar a "${nom}"?`))return;try{await deleteDoc(doc(db,'usuarios',uid));toast('🗑️ '+nom+' eliminado');renderUsrAccess();}catch(e){toast('❌ '+e.message);}};
 window.abrirNuevoUsr=()=>{['u-nom','u-email','u-pass'].forEach(id=>$(id).value='');$('u-rol').value='mesero';a('ov-usr');};
 window.guardarUsr=async()=>{
@@ -2083,7 +2084,7 @@ window.guardarNuevaMesa=()=>{
   c('ov-nueva-mesa');renderMesasAdmin();toast('✅ Agregada — presiona Guardar en la nube');
 };
 window.quitarMesa=id=>{const m=mesasTemp.find(x=>x.id===id);if(m?.abierta){toast('⚠️ Tiene pedido activo');return;}if(!confirm('¿Quitar esta mesa?'))return;mesasTemp=mesasTemp.filter(x=>x.id!==id);renderMesasAdmin();};
-window.guardarMesasNube=async()=>{if(!confirm('¿Guardar cambios?'))return;await setDoc(doc(db,'config','mesas'),{lista:mesasTemp});toast('✅ Mesas actualizadas');};
+window.guardarMesasNube=async()=>{if(!confirm('¿Guardar cambios?'))return;try{await setDoc(doc(db,'config','mesas'),{lista:mesasTemp});toast('✅ Mesas actualizadas');}catch(e){toast('❌ Error al guardar: '+e.message);}};
 
 // ════════════════════════════════════════════
 //  GASTOS
@@ -2180,31 +2181,35 @@ window.confirmarFiado=async()=>{
   const fecha=now.toLocaleDateString('es-MX');
   // Buscar si ya tiene fiado este cliente
   const existing=fiados.find(f=>!f.pagado&&f.nombre.toLowerCase()===nomCliente.toLowerCase());
-  if(existing){
-    // Agregar a su cuenta existente
-    const nuevoMonto=existing.monto+tot;
-    const nuevoDetalle=existing.detalle+' | '+fecha+': '+items;
-    await setDoc(doc(db,'fiados',existing._id),{monto:nuevoMonto,detalle:nuevoDetalle},{merge:true});
-    toast('🤝 Agregado a la cuenta de '+nomCliente+' — Total: $'+nuevoMonto);
-  } else {
-    // Crear nuevo fiado
-    await addDoc(collection(db,'fiados'),{
-      nombre:nomCliente,detalle:items,monto:tot,abonado:0,abonos:[],
-      fecha,mesero:S?.nombre||'',pagado:false,ts:serverTimestamp()
-    });
-    toast('🤝 Fiado registrado: $'+tot+' de '+nomCliente);
-  }
-  // Limpiar mesa igual que al cobrar
-  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
-  pedTmp={};platosTemp={};
-  await saveMesas();
-  c('ov-mesa');
+  try{
+    if(existing){
+      // Agregar a su cuenta existente
+      const nuevoMonto=existing.monto+tot;
+      const nuevoDetalle=existing.detalle+' | '+fecha+': '+items;
+      await setDoc(doc(db,'fiados',existing._id),{monto:nuevoMonto,detalle:nuevoDetalle},{merge:true});
+      toast('🤝 Agregado a la cuenta de '+nomCliente+' — Total: $'+nuevoMonto);
+    } else {
+      // Crear nuevo fiado
+      await addDoc(collection(db,'fiados'),{
+        nombre:nomCliente,detalle:items,monto:tot,abonado:0,abonos:[],
+        fecha,mesero:S?.nombre||'',pagado:false,ts:serverTimestamp()
+      });
+      toast('🤝 Fiado registrado: $'+tot+' de '+nomCliente);
+    }
+    // Limpiar mesa igual que al cobrar
+    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+    pedTmp={};platosTemp={};
+    await saveMesas();
+    c('ov-mesa');
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 
 window.delGasto=async id=>{
   if(!confirm('¿Eliminar este gasto?'))return;
-  await deleteDoc(doc(db,'gastos',id));
-  toast('🗑️ Gasto eliminado');
+  try{
+    await deleteDoc(doc(db,'gastos',id));
+    toast('🗑️ Gasto eliminado');
+  }catch(e){toast('❌ Error al eliminar: '+e.message);}
 };
 
 // CHAT DEL SISTEMA
@@ -2234,11 +2239,11 @@ function renderSysChat(msgs){
   const c=$('sys-chat-msgs');if(!c)return;
   const wasBottom=c.scrollHeight-c.scrollTop-c.clientHeight<60;
   c.innerHTML=msgs.map(m=>{
-    if(m.tipo==='sistema') return`<div class="smsg-sistema">${m.texto}</div>`;
+    if(m.tipo==='sistema') return`<div class="smsg-sistema">${escHtml(m.texto)}</div>`;
     const mio=m.uid===S?.uid;
     return`<div class="smsg ${mio?'mio':'otro'}">
-      <div class="smsg-burbuja">${m.texto}</div>
-      <div class="smsg-meta">${m.nombre} · ${m.hora||''}</div>
+      <div class="smsg-burbuja">${escHtml(m.texto)}</div>
+      <div class="smsg-meta">${escHtml(m.nombre)} · ${m.hora||''}</div>
     </div>`;
   }).join('');
   if(wasBottom)setTimeout(()=>{if(c)c.scrollTop=c.scrollHeight;},50);
@@ -2249,19 +2254,23 @@ window.sysEnviarChat=async()=>{
   const txt=input?.value.trim();if(!txt)return;
   input.value='';
   const now=new Date();
-  await addDoc(collection(db,'chat'),{
-    texto:txt,nombre:S?.nombre||'Mesero',uid:S?.uid||'',
-    hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-    ts:serverTimestamp()
-  });
+  try{
+    await addDoc(collection(db,'chat'),{
+      texto:txt,nombre:S?.nombre||'Mesero',uid:S?.uid||'',
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+      ts:serverTimestamp()
+    });
+  }catch(e){toast('❌ Error al enviar: '+e.message);}
 };
 window.sysAtajo=async txt=>{
   const now=new Date();
-  await addDoc(collection(db,'chat'),{
-    texto:txt,nombre:S?.nombre||'Mesero',uid:S?.uid||'',
-    hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-    ts:serverTimestamp()
-  });
+  try{
+    await addDoc(collection(db,'chat'),{
+      texto:txt,nombre:S?.nombre||'Mesero',uid:S?.uid||'',
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+      ts:serverTimestamp()
+    });
+  }catch(e){toast('❌ Error al enviar: '+e.message);}
 };
 
 // ════════════════════════════════════════════
@@ -2347,7 +2356,9 @@ window.editarFiado=(id)=>{
   a('ov-fiado');
 };
 
+let guardandoFiado=false;
 window.guardarFiado=async()=>{
+  if(guardandoFiado)return;
   const nom=$('f-nom').value.trim();
   const det=$('f-det').value.trim();
   const monto=parseFloat($('f-monto').value)||0;
@@ -2358,6 +2369,7 @@ window.guardarFiado=async()=>{
   // Convertir fecha a formato legible
   const [y,m,d]=fechaVal.split('-');
   const fechaStr=d+'/'+m+'/'+y;
+  guardandoFiado=true;
   try{
     if(editFiadoId){
       await setDoc(doc(db,'fiados',editFiadoId),{nombre:nom,detalle:det,monto,fecha:fechaStr,mesero:S?.nombre||''},{merge:true});
@@ -2368,6 +2380,7 @@ window.guardarFiado=async()=>{
     }
     c('ov-fiado');
   }catch(e){toast('❌ Error al guardar: '+e.message);}
+  finally{guardandoFiado=false;}
 };
 
 window.abrirAbono=(id)=>{
@@ -2379,34 +2392,44 @@ window.abrirAbono=(id)=>{
   a('ov-abono');
 };
 
+let aplicandoAbono=false;
 window.aplicarAbono=async()=>{
+  if(aplicandoAbono)return;
   const monto=parseFloat($('abono-monto').value)||0;
   if(monto<=0){toast('⚠️ Escribe el monto del abono');return;}
   const f=fiados.find(x=>x._id===abonoFiadoId);if(!f)return;
   const nuevoAbonado=(f.abonado||0)+monto;
   const abonos=[...(f.abonos||[]),{monto,fecha:new Date().toLocaleDateString('es-MX')}];
   const pagado=nuevoAbonado>=f.monto;
+  aplicandoAbono=true;
   try{
     await setDoc(doc(db,'fiados',abonoFiadoId),{abonado:nuevoAbonado,abonos,pagado},{merge:true});
     c('ov-abono');
     toast(pagado?'🎉 '+f.nombre+' pagó completo!':'💵 Abono registrado — resta $'+(f.monto-nuevoAbonado));
   }catch(e){toast('❌ Error al guardar: '+e.message);}
+  finally{aplicandoAbono=false;}
 };
 
+const marcandoPagado=new Set();
 window.marcarPagado=async(id)=>{
+  if(marcandoPagado.has(id))return;
   const f=fiados.find(x=>x._id===id);if(!f)return;
   if(!confirm('¿Marcar a '+f.nombre+' como pagado?'))return;
+  marcandoPagado.add(id);
   try{
     await setDoc(doc(db,'fiados',id),{pagado:true,abonado:f.monto},{merge:true});
     toast('✅ '+f.nombre+' marcado como pagado');
   }catch(e){toast('❌ Error al guardar: '+e.message);}
+  finally{marcandoPagado.delete(id);}
 };
 
 window.delFiado=async(id)=>{
   const f=fiados.find(x=>x._id===id);if(!f)return;
   if(!confirm('¿Eliminar el fiado de '+f.nombre+'?'))return;
-  await deleteDoc(doc(db,'fiados',id));
-  toast('🗑️ Eliminado');
+  try{
+    await deleteDoc(doc(db,'fiados',id));
+    toast('🗑️ Eliminado');
+  }catch(e){toast('❌ Error al eliminar: '+e.message);}
 };
 
 // Event delegation para botones de quitar plato
