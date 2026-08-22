@@ -750,12 +750,22 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       <button class="btn btn-gris" onclick="c('ov-mesa')" style="flex:0;padding:9px 12px;">✕</button>
       <button class="btn btn-gris" style="flex:0;padding:9px 12px;" onclick="ticketDesdeMesa()" title="Ver ticket">🧾</button>
       <button class="btn btn-gris" style="flex:0;padding:9px 12px;" onclick="dividirCuenta()" title="Dividir cuenta">➗</button>
+      <button class="btn btn-gris" style="flex:0;padding:9px 12px;" onclick="togglePagoParcial()" title="Pagar por persona" id="btn-parcial">🧑‍🤝‍🧑</button>
       <button class="btn btn-rojo" style="flex:0;padding:9px 12px;" onclick="mandarACaja()" title="Mandar ticket a caja para imprimir" id="btn-caja">📤</button>
       <button class="btn btn-amarillo" onclick="toggleCobro()" id="btn-cobrar" style="flex:1;">💳 Cobrar</button>
       <button class="btn btn-verde" onclick="confirmarCobro()" id="btn-confirmar" style="display:none;flex:1;">✅ Confirmar</button>
       <button class="btn btn-cafe" onclick="confirmarFiado()" id="btn-fio" style="display:none;flex:1;">🤝 Fió</button>
     </div>
     <div id="dividir-result" style="display:none;background:var(--gris);border-radius:10px;padding:10px;margin-top:8px;text-align:center;font-family:'Fredoka One',cursive;color:var(--cafe);font-size:14px;"></div>
+    <div class="cobro-box" id="parcial-box" style="display:none;">
+      <label>Selecciona lo que pagará esta persona</label>
+      <div id="parcial-lineas"></div>
+      <div class="total-bar" style="margin-top:8px;"><span class="tl">Subtotal seleccionado</span><span class="ta" id="parcial-subtotal">$0</span></div>
+      <label style="margin-top:8px;">Con cuánto paga ($)</label>
+      <input type="number" id="parcial-billete" placeholder="Ej: 100" oninput="calcCambioParcial()" min="0">
+      <div class="cambio-display"><span class="cl">Cambio:</span><span class="ca" id="parcial-cambio">$—</span></div>
+      <button class="btn btn-verde" style="width:100%;margin-top:9px;" onclick="confirmarCobroParcial()" id="btn-confirmar-parcial">✅ Cobrar selección</button>
+    </div>
   </div>
 </div>
 
@@ -885,6 +895,7 @@ let menu=null,mesas=null,inv=null,hist=[];
 let unsubs=[];
 let fEst='todos',editProdId=null,ajId=null;
 let mesaAct=null,pedTmp={};
+let pagoParcialSel={},procesandoPagoParcial=false;
 let iCat=null,iId=null;
 let fechaMode='hoy';
 let mesasTemp=[];
@@ -1269,6 +1280,7 @@ async function updTot(){
     await saveMesas();
   }
   calcCambio();
+  renderLineasParcial();
 }
 window.actualizaCliente=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);
@@ -1289,9 +1301,178 @@ window.dividirCuenta=()=>{
   }
 };
 
+function buildLineasCobrables(){
+  const lineas=[]; const idsEnMix=new Set();
+  Object.entries(platosTemp).forEach(([primerId,lista])=>{
+    (lista||[]).forEach((plato,idx)=>{
+      const mix=plato.mix||{}; const keys=Object.keys(mix);
+      keys.forEach(mid=>idsEnMix.add(mid));
+      if(keys.length===0) return;
+      if(keys.length>1||plato.nota){
+        // combo real (o con nota) -> unidad indivisible
+        const partes=keys.map(mid=>{const mp=findP(mid);const mc=mix[mid];return mp?mc.cant+'x '+mp.nombre+(mc.maciza>0?' ('+mc.maciza+' mza)':''):'';}).filter(Boolean).join(', ');
+        const precio=keys.reduce((s,mid)=>{const mp=findP(mid);return s+(mp?mp.precio*mix[mid].cant:0);},0);
+        lineas.push({key:'plato:'+primerId+':'+idx,tipo:'combo',primerId,idx,
+          label:'🍽️ '+partes+(plato.nota?' 📝'+plato.nota:''),precioUnit:precio,disponible:1});
+      } else {
+        // un solo tipo de taco -> partible por cantidad
+        const mid=keys[0],mc=mix[mid],p=findP(mid);if(!p)return;
+        const det=mc.maciza>0?(mc.cant-mc.maciza>0?': '+(mc.cant-mc.maciza)+' nrm, '+mc.maciza+' mza':': '+mc.maciza+' mza'):'';
+        lineas.push({key:'plato:'+primerId+':'+idx,tipo:'simple',primerId,idx,mid,
+          label:'🍽️ '+p.nombre+det,precioUnit:p.precio,disponible:mc.cant});
+      }
+    });
+  });
+  Object.entries(pedTmp).filter(([,v])=>v>0).forEach(([id,c])=>{
+    if(idsEnMix.has(id))return;
+    const p=findP(id);if(!p)return;
+    lineas.push({key:'flat:'+id,tipo:'flat',id,label:p.nombre,precioUnit:p.precio,disponible:c});
+  });
+  return lineas;
+}
+
+window.togglePagoParcial=()=>{
+  const m=mesas?.find(x=>x.id===mesaAct);
+  if(!m||calcT(pedTmp)===0){toast('⚠️ No hay pedido');return;}
+  const b=$('parcial-box'); const show=b.style.display==='none';
+  $('cobro-box').style.display='none';$('btn-confirmar').style.display='none';$('btn-fio').style.display='none';$('btn-cobrar').textContent='💳 Cobrar';
+  b.style.display=show?'':'none';
+  pagoParcialSel={};
+  if(show){renderLineasParcial();$('parcial-billete').value='';$('parcial-cambio').textContent='$—';}
+};
+
+function renderLineasParcial(){
+  const box=$('parcial-box');if(!box||box.style.display==='none')return;
+  const lineas=buildLineasCobrables();
+  window._lineasParcialCache=lineas;
+  $('parcial-lineas').innerHTML=lineas.length?lineas.map(l=>`<div class="prow">
+      <span class="pn">${l.label}</span><span class="pp">$${l.precioUnit}</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn qty-minus" onclick="chQtyParcial('${l.key}',-1)">−</button>
+        <span class="qty-num" id="pq-${l.key}">${pagoParcialSel[l.key]||0}</span>
+        <button class="qty-btn qty-plus" onclick="chQtyParcial('${l.key}',1)">+</button>
+      </div>
+      <span style="font-size:10px;color:var(--cafe3);">/${l.disponible}</span>
+    </div>`).join(''):'<p style="text-align:center;color:#bbb;font-size:11px;padding:8px;">Sin productos pendientes</p>';
+  updSubtotalParcial();
+}
+
+window.chQtyParcial=(key,d)=>{
+  const linea=(window._lineasParcialCache||[]).find(l=>l.key===key);if(!linea)return;
+  let n=(pagoParcialSel[key]||0)+d;
+  if(n<0)n=0; if(n>linea.disponible)n=linea.disponible;
+  pagoParcialSel[key]=n;
+  const e=$('pq-'+key);if(e)e.textContent=n;
+  updSubtotalParcial();
+};
+
+function subtotalParcial(){return (window._lineasParcialCache||[]).reduce((s,l)=>s+(pagoParcialSel[l.key]||0)*l.precioUnit,0);}
+function updSubtotalParcial(){$('parcial-subtotal').textContent='$'+subtotalParcial();calcCambioParcial();}
+window.calcCambioParcial=()=>{
+  const tot=subtotalParcial(),bil=parseFloat($('parcial-billete').value)||0,cam=bil-tot;
+  const el=$('parcial-cambio');
+  if(bil===0){el.textContent='$—';el.style.color='var(--amarillo)';}
+  else if(cam<0){el.textContent='Faltan $'+Math.abs(cam);el.style.color='#ff8a80';}
+  else{el.textContent='$'+cam;el.style.color='var(--amarillo)';}
+};
+
+window.confirmarCobroParcial=async()=>{
+  if(procesandoPagoParcial){toast('⏳ Procesando, espera...');return;}
+  const m=mesas?.find(x=>x.id===mesaAct);if(!m)return;
+  const tot=subtotalParcial();
+  if(tot===0){toast('⚠️ Selecciona al menos un producto');return;}
+  const seleccionadas=(window._lineasParcialCache||[]).filter(l=>(pagoParcialSel[l.key]||0)>0);
+
+  procesandoPagoParcial=true;
+  const btn=$('btn-confirmar-parcial');const textoOriginal=btn.textContent;
+  btn.textContent='⏳ Procesando...';btn.disabled=true;btn.style.opacity='.6';
+  try{
+    // Re-chequeo defensivo por si el pedido cambió mientras se seleccionaba
+    for(const l of seleccionadas){
+      if(l.tipo!=='flat'){
+        const entry=platosTemp[l.primerId]?.[l.idx];
+        const disp=l.tipo==='combo'?1:(entry?.mix?.[l.mid]?.cant||0);
+        if(!entry||disp<pagoParcialSel[l.key]) throw new Error('El pedido cambió, vuelve a seleccionar');
+      }
+    }
+
+    const pedidoParcial={},platosParcial={};
+    seleccionadas.forEach(l=>{
+      const n=pagoParcialSel[l.key];
+      if(l.tipo==='combo'){
+        const entry=platosTemp[l.primerId][l.idx];
+        Object.entries(entry.mix).forEach(([mid,mc])=>{pedidoParcial[mid]=(pedidoParcial[mid]||0)+mc.cant;});
+        (platosParcial[l.primerId]=platosParcial[l.primerId]||[]).push({cant:entry.cant,maciza:0,mix:entry.mix,nota:entry.nota||''});
+      } else if(l.tipo==='simple'){
+        pedidoParcial[l.mid]=(pedidoParcial[l.mid]||0)+n;
+        const entry=platosTemp[l.primerId][l.idx];
+        const maciza=Math.min(entry.mix[l.mid].maciza||0,n);
+        (platosParcial[l.primerId]=platosParcial[l.primerId]||[]).push({cant:n,maciza:0,mix:{[l.mid]:{cant:n,maciza}}});
+      } else {
+        pedidoParcial[l.id]=(pedidoParcial[l.id]||0)+n;
+      }
+    });
+
+    const folio=await getSiguienteFolio();
+    if(inv){
+      Object.entries(pedidoParcial).forEach(([id,c])=>{const p=findP(id);if(p?.inv){const it=inv.find(x=>x.id===p.inv);if(it)it.stock=Math.max(0,it.stock-c);}});
+      await saveInv();
+    }
+    const now=new Date();
+    const detalle={};
+    Object.entries(pedidoParcial).filter(([,c])=>c>0).forEach(([id,c])=>{const p=findP(id);if(p)detalle[id]={cant:c,precio:p.precio,nombre:p.nombre,subtotal:p.precio*c};});
+    const bil=parseFloat($('parcial-billete').value)||0,cam=bil>0?bil-tot:null;
+    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',
+      pedido:pedidoParcial,detalle,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,
+      hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),
+      cobradoPor:S?.nombre||'',impreso:false,dividido:true,ts:serverTimestamp()};
+    await addDoc(collection(db,'historial'),td);
+
+    // Descontar lo cobrado de la mesa (no vaciar todo)
+    seleccionadas.forEach(l=>{
+      const n=pagoParcialSel[l.key];
+      if(l.tipo==='combo'){
+        const entry=platosTemp[l.primerId][l.idx];
+        Object.entries(entry.mix).forEach(([mid,mc])=>{pedTmp[mid]=Math.max(0,(pedTmp[mid]||0)-mc.cant);});
+        platosTemp[l.primerId].splice(l.idx,1);
+      } else if(l.tipo==='simple'){
+        const entry=platosTemp[l.primerId][l.idx];
+        entry.mix[l.mid].cant-=n; entry.mix[l.mid].maciza=Math.min(entry.mix[l.mid].maciza||0,entry.mix[l.mid].cant);
+        entry.cant=entry.mix[l.mid].cant;
+        pedTmp[l.mid]=Math.max(0,(pedTmp[l.mid]||0)-n);
+        if(entry.mix[l.mid].cant<=0) platosTemp[l.primerId].splice(l.idx,1);
+      } else {
+        pedTmp[l.id]=Math.max(0,(pedTmp[l.id]||0)-n);
+      }
+      if(platosTemp[l.primerId||l.id]?.length===0) delete platosTemp[l.primerId||l.id];
+    });
+    m.pedido=JSON.parse(JSON.stringify(pedTmp));
+    m.platos=JSON.parse(JSON.stringify(platosTemp));
+
+    const quedaTotal=calcT(m.pedido);
+    if(quedaTotal===0){
+      m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+      pedTmp={};platosTemp={};
+    }
+    await saveMesas();
+
+    mostrarTicket({folio,nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',
+      pedido:pedidoParcial,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,hora:td.hora,fecha:td.fecha,cobradoPor:S?.nombre||''});
+
+    if(quedaTotal===0){c('ov-mesa');}
+    else{renderPedMod();pagoParcialSel={};renderLineasParcial();$('parcial-billete').value='';$('parcial-cambio').textContent='$—';}
+    toast('✅ Cobrado $'+tot+(quedaTotal>0?' — Falta $'+quedaTotal:''));
+  }catch(e){
+    toast('❌ Error al cobrar: '+e.message);
+  }finally{
+    procesandoPagoParcial=false;btn.textContent=textoOriginal;btn.disabled=false;btn.style.opacity='';
+  }
+};
+
 window.toggleCobro=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);
   if(!m||calcT(m.pedido)===0){toast('⚠️ No hay pedido');return;}
+  $('parcial-box').style.display='none';
   const b=$('cobro-box');const show=b.style.display==='none';
   b.style.display=show?'':'none';$('btn-confirmar').style.display=show?'':'none';$('btn-fio').style.display=show?'':'none';
   $('btn-cobrar').textContent=show?'✏️ Editar':'💳 Cobrar';
