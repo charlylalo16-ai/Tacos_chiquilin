@@ -2074,7 +2074,7 @@ window.guardarUsr=async()=>{
 // GESTIÓN MESAS
 function renderMesasAdmin(){
   const el=$('mesas-admin');if(!el)return;
-  el.innerHTML=mesasTemp.map(m=>`<div class="mesa-admin-row"><span>${m.tipo==='llevar'?'🛍️':'🍽️'}</span><span>${m.nombre}</span>${m.abierta?'<span style="font-size:9px;background:#fde8e8;color:var(--rojo-d);padding:2px 6px;border-radius:50px;font-weight:800;">Con pedido</span>':''}<button class="btn-sm btn-del" onclick="quitarMesa(${m.id})">🗑️</button></div>`).join('');
+  el.innerHTML=mesasTemp.map(m=>`<div class="mesa-admin-row"><span>${m.tipo==='llevar'?'🛍️':'🍽️'}</span><span>${m.nombre}</span>${m.abierta?'<span style="font-size:9px;background:#fde8e8;color:var(--rojo-d);padding:2px 6px;border-radius:50px;font-weight:800;">Con pedido</span>':''}${m.abierta?`<button class="btn-sm" style="background:#fff3cd;color:#856404;" title="Vaciar pedido atorado sin cobrar" onclick="vaciarMesa(${m.id})">🧹</button>`:''}<button class="btn-sm btn-del" onclick="quitarMesa(${m.id})">🗑️</button></div>`).join('');
 }
 window.abrirNuevaMesa=()=>{$('nm-nom').value='';$('nm-tipo').value='mesa';a('ov-nueva-mesa');};
 window.guardarNuevaMesa=()=>{
@@ -2084,6 +2084,13 @@ window.guardarNuevaMesa=()=>{
   c('ov-nueva-mesa');renderMesasAdmin();toast('✅ Agregada — presiona Guardar en la nube');
 };
 window.quitarMesa=id=>{const m=mesasTemp.find(x=>x.id===id);if(m?.abierta){toast('⚠️ Tiene pedido activo');return;}if(!confirm('¿Quitar esta mesa?'))return;mesasTemp=mesasTemp.filter(x=>x.id!==id);renderMesasAdmin();};
+window.vaciarMesa=id=>{
+  const m=mesasTemp.find(x=>x.id===id);if(!m)return;
+  if(!confirm('¿Vaciar el pedido de '+m.nombre+'? Esto NO cobra ni registra ninguna venta, solo libera la mesa.'))return;
+  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+  renderMesasAdmin();
+  toast('🧹 Mesa vaciada — presiona "Guardar mesas en la nube" para confirmar');
+};
 window.guardarMesasNube=async()=>{if(!confirm('¿Guardar cambios?'))return;try{await setDoc(doc(db,'config','mesas'),{lista:mesasTemp});toast('✅ Mesas actualizadas');}catch(e){toast('❌ Error al guardar: '+e.message);}};
 
 // ════════════════════════════════════════════
