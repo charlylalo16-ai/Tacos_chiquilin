@@ -2624,6 +2624,13 @@ window.delFiado=async(id)=>{
 document.addEventListener('click', e=>{
   const btn=e.target.closest('.btn-quitar-plato');
   if(btn) window.quitarPlatoGlobal(btn.dataset.id, parseInt(btn.dataset.idx));
+  // Botones de historial/ventas
+  const vbtn=e.target.closest('[data-vaction]');
+  if(vbtn){
+    const id=vbtn.dataset.vid;
+    const action=vbtn.dataset.vaction;
+    if(action==='del') window.delVenta(id);
+  }
   // Botones de fiados
   const fbtn=e.target.closest('[data-faction]');
   if(fbtn){
