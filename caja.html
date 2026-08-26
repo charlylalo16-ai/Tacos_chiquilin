@@ -520,8 +520,11 @@ const BT_SERVICE2='0000ff00-0000-1000-8000-00805f9b34fb';
 const BT_CHAR2='0000ff02-0000-1000-8000-00805f9b34fb';
 let btDevice=null;
 
+let reconectando=false;
+
 window.toggleImpresora=async()=>{
   if(btChar){
+    try{btDevice?.gatt?.disconnect();}catch(e){}
     btChar=null;btDevice=null;
     actualizarBtStatus(false);
     toast('🔌 Impresora desconectada');
@@ -529,6 +532,15 @@ window.toggleImpresora=async()=>{
   }
   await conectarImpresora();
 };
+
+async function obtenerCaracteristica(server){
+  try{const s=await server.getPrimaryService(BT_SERVICE);return await s.getCharacteristic(BT_CHAR);}catch(e){}
+  try{const s=await server.getPrimaryService(BT_SERVICE2);return await s.getCharacteristic(BT_CHAR2);}catch(e){}
+  const svcs=await server.getPrimaryServices();
+  const s=svcs[0];
+  const chars=await s.getCharacteristics();
+  return chars.find(c=>c.properties.write||c.properties.writeWithoutResponse)||chars[0];
+}
 
 async function conectarImpresora(){
   if(!navigator.bluetooth){toast('⚠️ Usa Chrome en Android');return;}
@@ -539,18 +551,38 @@ async function conectarImpresora(){
       optionalServices:[BT_SERVICE,BT_SERVICE2,'49535343-fe7d-4ae5-8fa9-9fafd205e455']
     });
     const server=await btDevice.gatt.connect();
-    let service,char;
-    try{service=await server.getPrimaryService(BT_SERVICE);char=await service.getCharacteristic(BT_CHAR);}
-    catch{try{service=await server.getPrimaryService(BT_SERVICE2);char=await service.getCharacteristic(BT_CHAR2);}
-    catch{const svcs=await server.getPrimaryServices();service=svcs[0];const chars=await service.getCharacteristics();char=chars.find(c=>c.properties.write||c.properties.writeWithoutResponse)||chars[0];}}
-    btChar=char;
-    btDevice.addEventListener('gattserverdisconnected',()=>{btChar=null;actualizarBtStatus(false);toast('⚠️ Impresora desconectada');});
+    btChar=await obtenerCaracteristica(server);
+    btDevice.addEventListener('gattserverdisconnected',onImpresoraDesconectada);
     actualizarBtStatus(true);
     toast('✅ Conectado: '+btDevice.name);
     if(autoPrint&&pendientes.length>0) setTimeout(imprimirSiguiente,1000);
   }catch(e){
     if(e.name!=='NotFoundError') toast('❌ '+e.message);
   }
+}
+
+// Reconectar solo sin volver a mostrar el buscador de dispositivos —
+// el navegador ya tiene la referencia del dispositivo emparejado.
+async function onImpresoraDesconectada(){
+  btChar=null;
+  actualizarBtStatus(false);
+  if(reconectando||!btDevice)return;
+  reconectando=true;
+  toast('⚠️ Impresora desconectada — reconectando...');
+  for(let i=0;i<5;i++){
+    await new Promise(r=>setTimeout(r,1000*(i+1)));
+    try{
+      const server=await btDevice.gatt.connect();
+      btChar=await obtenerCaracteristica(server);
+      actualizarBtStatus(true);
+      toast('✅ Impresora reconectada');
+      if(autoPrint&&pendientes.length>0) setTimeout(imprimirSiguiente,500);
+      reconectando=false;
+      return;
+    }catch(e){}
+  }
+  reconectando=false;
+  toast('❌ No se pudo reconectar — presiona 🔵 Conectar');
 }
 
 function actualizarBtStatus(conectado){

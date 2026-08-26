@@ -1016,7 +1016,7 @@ function suscribir(){
       if(p?.id==='page-inventario') renderInvAccess();
     }
   }));
-  unsubs.push(onSnapshot(query(collection(db,'historial'),orderBy('ts','desc')),s=>{
+  unsubs.push(onSnapshot(query(collection(db,'historial'),orderBy('ts','desc'),limit(2000)),s=>{
     hist=s.docs.map(d=>({...d.data(),_id:d.id}));
     const p=document.querySelector('.page.active');
     if(p?.id==='page-historial') renderHist();
