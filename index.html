@@ -708,16 +708,6 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   </div>
 </div>
 
-<div class="overlay" id="ov-ajuste">
-  <div class="modal">
-    <div class="modal-header"><h2>Ajustar Stock</h2><button class="btn btn-gris btn-sm" onclick="c('ov-ajuste')">✕</button></div>
-    <p id="aj-nom" style="font-weight:700;color:var(--cafe);margin-bottom:11px;font-size:12px;"></p>
-    <div class="fg"><label>Operación</label><select id="aj-tipo"><option value="add">➕ Agregar</option><option value="sub">➖ Reducir</option><option value="set">📌 Establecer exacto</option></select></div>
-    <div class="fg"><label>Cantidad</label><input type="number" id="aj-cant" min="0" placeholder="0"></div>
-    <div class="modal-btns"><button class="btn btn-gris" onclick="c('ov-ajuste')">Cancelar</button><button class="btn btn-verde" onclick="aplicarAjuste()">Aplicar</button></div>
-  </div>
-</div>
-
 <div class="overlay" id="ov-item">
   <div class="modal">
     <div class="modal-header"><h2 id="item-tit">Nuevo producto</h2><button class="btn btn-gris btn-sm" onclick="c('ov-item')">✕</button></div>
@@ -729,7 +719,11 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
 
 <div class="overlay" id="ov-mesa">
   <div class="modal" style="max-width:430px;">
-    <div class="modal-header"><h2 id="mesa-tit">Mesa</h2><button class="btn btn-gris btn-sm" onclick="c('ov-mesa')">✕</button></div>
+    <div class="modal-header"><h2 id="mesa-tit">Mesa</h2><button class="btn btn-gris btn-sm" onclick="toggleUnirMesa()" title="Unir con otra mesa">🔗</button><button class="btn btn-gris btn-sm" onclick="c('ov-mesa')">✕</button></div>
+    <div class="cobro-box" id="unir-box" style="display:none;">
+      <label>Elige la mesa a unir con esta cuenta</label>
+      <div id="unir-lista"></div>
+    </div>
     <div class="campo-llevar" id="campo-llevar">
       <div><label>👤 Nombre del cliente</label><input type="text" id="cl-nom" placeholder="Juan, Familia..." oninput="actualizaCliente()"></div>
       <div class="row2" style="gap:7px;">
@@ -893,7 +887,7 @@ const db=getFirestore(app);
 let S=null; // sesion
 let menu=null,mesas=null,inv=null,hist=[];
 let unsubs=[];
-let fEst='todos',editProdId=null,ajId=null;
+let fEst='todos',editProdId=null;
 let mesaAct=null,pedTmp={};
 let pagoParcialSel={},procesandoPagoParcial=false;
 let iCat=null,iId=null;
@@ -1051,16 +1045,25 @@ window.renderMesas=()=>{
     return;
   }
   g.innerHTML=mesas.map(m=>{
+    const lv=m.tipo==='llevar';
+    const em=lv?'🛍️':'🍽️';
+    if(m.fusionadaCon){
+      const host=mesas.find(x=>x.id===m.fusionadaCon);
+      return`<div class="mesa-card">
+        <div class="mesa-header"><span class="mesa-num">${em} ${m.nombre}</span><span class="mesa-total-show">🔗 Unida</span></div>
+        <div class="mesa-body"><p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">Fusionada con ${host?.nombre||'otra mesa'}</p></div>
+        <div class="mesa-btns"><button class="btn btn-cafe" onclick="abrirMesa(${m.fusionadaCon})">Ver cuenta de ${host?.nombre||''}</button></div>
+      </div>`;
+    }
     const tot=calcT(m.pedido);
     const items=Object.entries(m.pedido||{}).filter(([,v])=>v>0);
-    const lv=m.tipo==='llevar';
     const cls=m.abierta?(lv?'llevar':'ocupada'):'';
-    const em=lv?'🛍️':'🍽️';
     const cb=lv&&m.cliente?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">👤${m.cliente}</span>`:'';
+    const ub=m.unidas?.length?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">🔗+${m.unidas.length}</span>`:'';
     const ih=items.length?items.map(([id,c])=>{const p=findP(id);if(!p)return'';return`<div class="mesa-item"><span class="nombre">${p.nombre}</span><span class="cant">${c}</span><span class="precio">$${p.precio*c}</span></div>`;}).join(''):`<p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">${lv?'Sin pedido':'Mesa libre'}</p>`;
     return`<div class="mesa-card ${cls}${lv?' llevar-card':''}">
       <div class="mesa-header ${cls}">
-        <span class="mesa-num">${em} ${m.nombre}${cb}</span>
+        <span class="mesa-num">${em} ${m.nombre}${cb}${ub}</span>
         <div style="text-align:right;">
           <span class="mesa-total-show">${m.abierta?'$'+tot:'Libre'}</span>
           ${m.abierta&&m.abiertaPor?'<div style="font-size:9px;opacity:.7;font-family:Nunito,sans-serif;font-weight:700;">👤 '+m.abiertaPor+'</div>':''}
@@ -1078,16 +1081,19 @@ window.renderMesas=()=>{
 
 window.abrirMesa=mid=>{
   const m=mesas.find(x=>x.id===mid);if(!m)return;
+  if(m.fusionadaCon){toast('🔗 Esta mesa está unida a otra cuenta');window.abrirMesa(m.fusionadaCon);return;}
   mesaAct=mid;pedTmp=JSON.parse(JSON.stringify(m.pedido||{}));platosTemp=JSON.parse(JSON.stringify(m.platos||{}));
   // Si la mesa está libre, limpiar quien la atendió antes
   if(!m.abierta) m.abiertaPor='';
   const lv=m.tipo==='llevar';
-  $('mesa-tit').textContent=(lv?'🛍️':'🍽️')+' '+m.nombre+(m.abiertaPor?' — 👤 '+m.abiertaPor:'');
+  const nombreCompleto=m.nombre+(m.unidas?.length?' + '+m.unidas.map(id=>mesas.find(x=>x.id===id)?.nombre).filter(Boolean).join(' + '):'');
+  $('mesa-tit').textContent=(lv?'🛍️':'🍽️')+' '+nombreCompleto+(m.abiertaPor?' — 👤 '+m.abiertaPor:'');
   const cl=$('campo-llevar');
   cl.style.display=lv?'flex':'none';
-  if(lv){$('cl-nom').value=m.abierta?(m.cliente||''):'';$('cl-tel').value=m.abierta?(m.telefono||''):'';$('cl-dir').value=m.abierta?(m.direccion||''):'';}  
+  if(lv){$('cl-nom').value=m.abierta?(m.cliente||''):'';$('cl-tel').value=m.abierta?(m.telefono||''):'';$('cl-dir').value=m.abierta?(m.direccion||''):'';}
   $('cobro-box').style.display='none';$('btn-confirmar').style.display='none';$('btn-fio').style.display='none';
   $('btn-cobrar').style.display='';$('billete').value='';$('cambio').textContent='$—';
+  $('unir-box').style.display='none';$('parcial-box').style.display='none';
   renderPedMod();a('ov-mesa');
 };
 
@@ -1301,6 +1307,43 @@ window.dividirCuenta=()=>{
   }
 };
 
+function liberarMesasUnidas(m,lista){
+  (m.unidas||[]).forEach(id=>{const g=lista.find(x=>x.id===id);if(g){g.fusionadaCon=null;g.abierta=false;}});
+  m.unidas=[];
+}
+
+window.toggleUnirMesa=()=>{
+  const b=$('unir-box');const show=b.style.display==='none';
+  b.style.display=show?'':'none';
+  if(show)renderListaUnir();
+};
+
+function renderListaUnir(){
+  const box=$('unir-box');if(!box||box.style.display==='none')return;
+  const m=mesas?.find(x=>x.id===mesaAct);if(!m)return;
+  const disponibles=mesas.filter(x=>x.id!==mesaAct&&!x.fusionadaCon&&!(x.unidas&&x.unidas.length));
+  $('unir-lista').innerHTML=disponibles.length?disponibles.map(x=>{
+    const tot=calcT(x.pedido);
+    return `<button class="btn btn-gris" style="width:100%;margin-bottom:6px;text-align:left;" onclick="unirMesa(${x.id})">${x.tipo==='llevar'?'🛍️':'🍽️'} ${x.nombre} — ${x.abierta?'$'+tot:'Libre'}</button>`;
+  }).join(''):'<p style="text-align:center;color:#bbb;font-size:11px;">No hay otras mesas disponibles para unir</p>';
+}
+
+window.unirMesa=async(guestId)=>{
+  const m=mesas?.find(x=>x.id===mesaAct);const g=mesas?.find(x=>x.id===guestId);
+  if(!m||!g)return;
+  Object.entries(g.pedido||{}).forEach(([id,c])=>{pedTmp[id]=(pedTmp[id]||0)+c;});
+  Object.entries(g.platos||{}).forEach(([id,lista])=>{platosTemp[id]=(platosTemp[id]||[]).concat(lista||[]);});
+  g.pedido={};g.platos={};g.abierta=false;g.cliente='';g.telefono='';g.direccion='';g.abiertaPor='';g.ticketCajaId=null;
+  g.fusionadaCon=mesaAct;
+  m.unidas=[...(m.unidas||[]),guestId];
+  m.pedido=JSON.parse(JSON.stringify(pedTmp));m.platos=JSON.parse(JSON.stringify(platosTemp));
+  m.abierta=true;
+  try{ await saveMesas(); }catch(e){ toast('❌ Error al guardar: '+e.message); return; }
+  toast('🔗 '+g.nombre+' unida a '+m.nombre);
+  $('mesa-tit').textContent=(m.tipo==='llevar'?'🛍️':'🍽️')+' '+m.nombre+(m.unidas.length?' + '+m.unidas.map(id=>mesas.find(x=>x.id===id)?.nombre).filter(Boolean).join(' + '):'');
+  renderPedMod();renderListaUnir();
+};
+
 function buildLineasCobrables(){
   const lineas=[]; const idsEnMix=new Set();
   Object.entries(platosTemp).forEach(([primerId,lista])=>{
@@ -1451,6 +1494,7 @@ window.confirmarCobroParcial=async()=>{
 
     const quedaTotal=calcT(m.pedido);
     if(quedaTotal===0){
+      liberarMesasUnidas(m,mesas);
       m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
       pedTmp={};platosTemp={};
     }
@@ -1526,6 +1570,7 @@ window.confirmarCobro=async()=>{
     });
     const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',pedido:JSON.parse(JSON.stringify(m.pedido)),detalle,platos:JSON.parse(JSON.stringify(platosTemp)),total:tot,billete:bil||null,cambio:cam,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:S?.nombre||'',impreso:false,ts:serverTimestamp()};
     await addDoc(collection(db,'historial'),td);
+    liberarMesasUnidas(m,mesas);
     m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;pedTmp={};platosTemp={};
     await saveMesas();
     c('ov-mesa');
@@ -1597,7 +1642,7 @@ window.renderInv=()=>{
     if(p.stock===0){cls='stock-agotado';lbl='🚫 Agotado';}else if(p.stock<=p.min){cls='stock-bajo';lbl='⚠️ Bajo';}else{cls='stock-ok';lbl='✅ OK';}
     const cc=p.categoria==='Bebidas'?'cat-bebidas':'cat-desechables';
     const costoTxt=p.costo?'<span style="color:var(--rojo);font-weight:800;">$'+p.costo+'</span>':'<span style="color:#ddd;">—</span>';
-    return`<tr><td><strong>${p.nombre}</strong></td><td><span class="badge ${cc}">${p.categoria}</span></td><td>${p.unidad}</td><td><strong>${p.stock}</strong></td><td style="color:#999">${p.min}</td><td>${costoTxt}</td><td><span class="badge ${cls}">${lbl}</span></td><td><div class="acciones"><button class="btn-sm btn-add" onclick="abrirAj('${p.id}')">📦</button><button class="btn-sm btn-edit" onclick="editProd('${p.id}')">✏️</button><button class="btn-sm btn-del" onclick="delProd('${p.id}')">🗑️</button></div></td></tr>`;
+    return`<tr><td><strong>${p.nombre}</strong></td><td><span class="badge ${cc}">${p.categoria}</span></td><td>${p.unidad}</td><td><div class="qty-ctrl" style="justify-content:center;"><button class="qty-btn qty-minus" onclick="ajustarStock('${p.id}',-1)">−</button><span class="qty-num" id="inv-stk-${p.id}" onclick="editarStockExacto('${p.id}')" title="Toca para escribir la cantidad exacta">${p.stock}</span><button class="qty-btn qty-plus" onclick="ajustarStock('${p.id}',1)">+</button></div></td><td style="color:#999">${p.min}</td><td>${costoTxt}</td><td><span class="badge ${cls}">${lbl}</span></td><td><div class="acciones"><button class="btn-sm btn-edit" onclick="editProd('${p.id}')">✏️</button><button class="btn-sm btn-del" onclick="delProd('${p.id}')">🗑️</button></div></td></tr>`;
   }).join('');
 };
 window.abrirProd=()=>{editProdId=null;$('prod-tit').textContent='➕ Nuevo Producto';['p-nom','p-stk','p-min','p-costo'].forEach(id=>$(id).value='');a('ov-prod');};
@@ -1617,11 +1662,21 @@ window.guardarProd=async()=>{
   finally{guardandoProd=false;}
 };
 window.delProd=async id=>{if(!confirm('¿Eliminar?'))return;inv=inv.filter(x=>x.id!==id);await saveInv();toast('🗑️ Eliminado');};
-window.abrirAj=id=>{ajId=id;const p=inv.find(x=>x.id===id);$('aj-nom').textContent=p.nombre+' — Stock: '+p.stock+' '+p.unidad;$('aj-cant').value='';a('ov-ajuste');};
-window.aplicarAjuste=async()=>{
-  const tipo=$('aj-tipo').value,cant=parseFloat($('aj-cant').value)||0,p=inv.find(x=>x.id===ajId);
-  if(tipo==='add')p.stock+=cant;else if(tipo==='sub')p.stock=Math.max(0,p.stock-cant);else p.stock=Math.max(0,cant);
-  await saveInv();c('ov-ajuste');toast('📦 Actualizado');
+window.ajustarStock=async(id,d)=>{
+  const p=inv.find(x=>x.id===id);if(!p)return;
+  p.stock=Math.max(0,(p.stock||0)+d);
+  renderInv();
+  try{await saveInv();}catch(e){toast('❌ Error al guardar: '+e.message);}
+};
+window.editarStockExacto=async(id)=>{
+  const p=inv.find(x=>x.id===id);if(!p)return;
+  const n=prompt('Cantidad exacta de "'+p.nombre+'" ('+p.unidad+'):',p.stock);
+  if(n===null)return;
+  const val=parseFloat(n);
+  if(isNaN(val)||val<0){toast('⚠️ Cantidad inválida');return;}
+  p.stock=val;
+  renderInv();
+  try{await saveInv();toast('📦 Actualizado');}catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 window.exportCSV=()=>{
   const h=['Producto','Categoría','Unidad','Stock','Mín','Costo unitario','Estado'];
@@ -2268,6 +2323,7 @@ window.quitarMesa=id=>{const m=mesasTemp.find(x=>x.id===id);if(m?.abierta){toast
 window.vaciarMesa=id=>{
   const m=mesasTemp.find(x=>x.id===id);if(!m)return;
   if(!confirm('¿Vaciar el pedido de '+m.nombre+'? Esto NO cobra ni registra ninguna venta, solo libera la mesa.'))return;
+  liberarMesasUnidas(m,mesasTemp);
   m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
   renderMesasAdmin();
   toast('🧹 Mesa vaciada — presiona "Guardar mesas en la nube" para confirmar');
@@ -2385,6 +2441,7 @@ window.confirmarFiado=async()=>{
       toast('🤝 Fiado registrado: $'+tot+' de '+nomCliente);
     }
     // Limpiar mesa igual que al cobrar
+    liberarMesasUnidas(m,mesas);
     m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
     pedTmp={};platosTemp={};
     await saveMesas();
@@ -2652,7 +2709,7 @@ document.addEventListener('click', e=>{
 });
 
 // CERRAR MODALES AL CLICK FUERA
-['ov-prod','ov-ajuste','ov-item','ov-mesa','ov-usr','ov-ticket','ov-nueva-mesa','ov-gasto','ov-fiado','ov-abono'].forEach(id=>{
+['ov-prod','ov-item','ov-mesa','ov-usr','ov-ticket','ov-nueva-mesa','ov-gasto','ov-fiado','ov-abono'].forEach(id=>{
   const el=$(id);if(el)el.addEventListener('click',function(e){if(e.target===this)c(id);});
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-screen').style.display!=='none')window.loginEmail();});
