@@ -181,7 +181,10 @@ nav{
 .toolbar input:focus,.toolbar select:focus{border-color:var(--rojo);box-shadow:0 0 0 3px rgba(192,19,27,0.08);}
 
 /* ── TABLA ── */
-.tabla-wrap{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow:hidden;}
+.tabla-wrap{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow);overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.tabla-wrap table{white-space:nowrap;}
+.tabla-wrap .qty-btn{width:24px;height:24px;font-size:13px;}
+.tabla-wrap .qty-num{font-size:15px;min-width:16px;}
 table{width:100%;border-collapse:collapse;}
 thead{background:linear-gradient(135deg,var(--cafe),#2d0a00);color:var(--amarillo);font-family:Fredoka One,cursive;font-size:11px;}
 thead th{padding:10px 12px;text-align:left;letter-spacing:0.3px;}
@@ -468,6 +471,7 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   thead th:nth-child(6),tbody td:nth-child(6){display:none;}
 }
 @media(max-width:639px){
+  thead th:nth-child(5),tbody td:nth-child(5),
   thead th:nth-child(6),tbody td:nth-child(6){display:none;}
 }
 </style>
@@ -721,7 +725,6 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   <div class="modal" style="max-width:430px;">
     <div class="modal-header"><h2 id="mesa-tit">Mesa</h2><button class="btn btn-gris btn-sm" onclick="toggleUnirMesa()" title="Unir con otra mesa">🔗</button><button class="btn btn-gris btn-sm" onclick="c('ov-mesa')">✕</button></div>
     <div class="cobro-box" id="unir-box" style="display:none;">
-      <label>Elige la mesa a unir con esta cuenta</label>
       <div id="unir-lista"></div>
     </div>
     <div class="campo-llevar" id="campo-llevar">
@@ -866,7 +869,7 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   <div class="modal">
     <div class="modal-header"><h2>Nueva Mesa</h2><button class="btn btn-gris btn-sm" onclick="c('ov-nueva-mesa')">✕</button></div>
     <div class="fg"><label>Nombre *</label><input type="text" id="nm-nom" placeholder="Ej: Mesa 5 / Terraza"></div>
-    <div class="fg"><label>Tipo</label><select id="nm-tipo"><option value="mesa">🍽️ Mesa normal</option><option value="llevar">🛍️ Para Llevar</option></select></div>
+    <div class="fg"><label>Tipo</label><select id="nm-tipo" onchange="actualizarSugerenciaMesa()"><option value="mesa">🍽️ Mesa normal</option><option value="llevar">🛍️ Para Llevar</option></select></div>
     <div class="modal-btns"><button class="btn btn-gris" onclick="c('ov-nueva-mesa')">Cancelar</button><button class="btn btn-rojo" onclick="guardarNuevaMesa()">Agregar</button></div>
   </div>
 </div>
@@ -1086,8 +1089,7 @@ window.abrirMesa=mid=>{
   // Si la mesa está libre, limpiar quien la atendió antes
   if(!m.abierta) m.abiertaPor='';
   const lv=m.tipo==='llevar';
-  const nombreCompleto=m.nombre+(m.unidas?.length?' + '+m.unidas.map(id=>mesas.find(x=>x.id===id)?.nombre).filter(Boolean).join(' + '):'');
-  $('mesa-tit').textContent=(lv?'🛍️':'🍽️')+' '+nombreCompleto+(m.abiertaPor?' — 👤 '+m.abiertaPor:'');
+  $('mesa-tit').textContent=tituloMesaConUnidas(m)+(m.abiertaPor?' — 👤 '+m.abiertaPor:'');
   const cl=$('campo-llevar');
   cl.style.display=lv?'flex':'none';
   if(lv){$('cl-nom').value=m.abierta?(m.cliente||''):'';$('cl-tel').value=m.abierta?(m.telefono||''):'';$('cl-dir').value=m.abierta?(m.direccion||''):'';}
@@ -1318,21 +1320,47 @@ window.toggleUnirMesa=()=>{
   if(show)renderListaUnir();
 };
 
+function tituloMesaConUnidas(m){
+  return (m.tipo==='llevar'?'🛍️':'🍽️')+' '+m.nombre+(m.unidas?.length?' + '+m.unidas.map(id=>mesas.find(x=>x.id===id)?.nombre).filter(Boolean).join(' + '):'');
+}
+
 function renderListaUnir(){
   const box=$('unir-box');if(!box||box.style.display==='none')return;
   const m=mesas?.find(x=>x.id===mesaAct);if(!m)return;
+  const unidas=(m.unidas||[]).map(id=>mesas.find(x=>x.id===id)).filter(Boolean);
   const disponibles=mesas.filter(x=>x.id!==mesaAct&&!x.fusionadaCon&&!(x.unidas&&x.unidas.length));
-  $('unir-lista').innerHTML=disponibles.length?disponibles.map(x=>{
+  let html='';
+  if(unidas.length){
+    html+='<label>Mesas unidas a esta cuenta</label>';
+    html+=unidas.map(x=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+      <span style="flex:1;font-size:12px;font-weight:700;">${x.tipo==='llevar'?'🛍️':'🍽️'} ${x.nombre}</span>
+      <button class="btn btn-gris" style="flex:0;padding:6px 10px;" onclick="desvincularMesa(${x.id})">↩️ Separar</button>
+    </div>`).join('');
+  }
+  html+='<label style="margin-top:'+(unidas.length?'10px':'0')+';">Elige la mesa a unir con esta cuenta</label>';
+  html+=disponibles.length?disponibles.map(x=>{
     const tot=calcT(x.pedido);
     return `<button class="btn btn-gris" style="width:100%;margin-bottom:6px;text-align:left;" onclick="unirMesa(${x.id})">${x.tipo==='llevar'?'🛍️':'🍽️'} ${x.nombre} — ${x.abierta?'$'+tot:'Libre'}</button>`;
   }).join(''):'<p style="text-align:center;color:#bbb;font-size:11px;">No hay otras mesas disponibles para unir</p>';
+  $('unir-lista').innerHTML=html;
 }
 
 window.unirMesa=async(guestId)=>{
   const m=mesas?.find(x=>x.id===mesaAct);const g=mesas?.find(x=>x.id===guestId);
   if(!m||!g)return;
+  // Guardar de dónde vino cada producto para poder desvincular después
+  const idsEnPlatosGuest=new Set();
+  Object.entries(g.platos||{}).forEach(([,lista])=>{(lista||[]).forEach(pl=>{Object.keys(pl.mix||{}).forEach(mid=>idsEnPlatosGuest.add(mid));});});
+  const flatSnap={};
+  Object.entries(g.pedido||{}).forEach(([id,c])=>{if(!idsEnPlatosGuest.has(id)&&c>0)flatSnap[id]=c;});
+  m.fusionFlat=m.fusionFlat||{};m.fusionFlat[guestId]=flatSnap;
+  m.fusionInfo=m.fusionInfo||{};m.fusionInfo[guestId]={cliente:g.cliente||'',telefono:g.telefono||'',direccion:g.direccion||''};
+
   Object.entries(g.pedido||{}).forEach(([id,c])=>{pedTmp[id]=(pedTmp[id]||0)+c;});
-  Object.entries(g.platos||{}).forEach(([id,lista])=>{platosTemp[id]=(platosTemp[id]||[]).concat(lista||[]);});
+  Object.entries(g.platos||{}).forEach(([id,lista])=>{
+    const marcados=(lista||[]).map(pl=>({...pl,_fusionDe:guestId}));
+    platosTemp[id]=(platosTemp[id]||[]).concat(marcados);
+  });
   g.pedido={};g.platos={};g.abierta=false;g.cliente='';g.telefono='';g.direccion='';g.abiertaPor='';g.ticketCajaId=null;
   g.fusionadaCon=mesaAct;
   m.unidas=[...(m.unidas||[]),guestId];
@@ -1340,7 +1368,45 @@ window.unirMesa=async(guestId)=>{
   m.abierta=true;
   try{ await saveMesas(); }catch(e){ toast('❌ Error al guardar: '+e.message); return; }
   toast('🔗 '+g.nombre+' unida a '+m.nombre);
-  $('mesa-tit').textContent=(m.tipo==='llevar'?'🛍️':'🍽️')+' '+m.nombre+(m.unidas.length?' + '+m.unidas.map(id=>mesas.find(x=>x.id===id)?.nombre).filter(Boolean).join(' + '):'');
+  $('mesa-tit').textContent=tituloMesaConUnidas(m);
+  renderPedMod();renderListaUnir();
+};
+
+window.desvincularMesa=async(guestId)=>{
+  const m=mesas?.find(x=>x.id===mesaAct);const g=mesas?.find(x=>x.id===guestId);
+  if(!m||!g)return;
+  if(!confirm('¿Separar '+g.nombre+' de esta cuenta? Sus productos regresan a su propia mesa.'))return;
+  const gPedido={},gPlatos={};
+  // Recuperar los platos (tacos) marcados como de esta mesa
+  Object.entries(platosTemp).forEach(([id,lista])=>{
+    const propias=lista.filter(pl=>pl._fusionDe===guestId);
+    if(!propias.length)return;
+    platosTemp[id]=lista.filter(pl=>pl._fusionDe!==guestId);
+    if(platosTemp[id].length===0)delete platosTemp[id];
+    gPlatos[id]=propias.map(({_fusionDe,...resto})=>resto);
+    propias.forEach(pl=>Object.entries(pl.mix||{}).forEach(([mid,mc])=>{
+      pedTmp[mid]=Math.max(0,(pedTmp[mid]||0)-mc.cant);
+      gPedido[mid]=(gPedido[mid]||0)+mc.cant;
+    }));
+  });
+  // Recuperar lo plano (bebidas/consomé) que se guardó al momento de unir
+  const flat=m.fusionFlat?.[guestId]||{};
+  Object.entries(flat).forEach(([id,c])=>{
+    pedTmp[id]=Math.max(0,(pedTmp[id]||0)-c);
+    gPedido[id]=(gPedido[id]||0)+c;
+  });
+  const info=m.fusionInfo?.[guestId]||{};
+  g.pedido=gPedido;g.platos=gPlatos;
+  g.cliente=info.cliente||'';g.telefono=info.telefono||'';g.direccion=info.direccion||'';
+  g.abierta=Object.values(gPedido).some(v=>v>0);
+  g.fusionadaCon=null;
+  m.unidas=(m.unidas||[]).filter(id=>id!==guestId);
+  if(m.fusionFlat)delete m.fusionFlat[guestId];
+  if(m.fusionInfo)delete m.fusionInfo[guestId];
+  m.pedido=JSON.parse(JSON.stringify(pedTmp));m.platos=JSON.parse(JSON.stringify(platosTemp));
+  try{ await saveMesas(); }catch(e){ toast('❌ Error al guardar: '+e.message); return; }
+  toast('↩️ '+g.nombre+' separada de nuevo');
+  $('mesa-tit').textContent=tituloMesaConUnidas(m);
   renderPedMod();renderListaUnir();
 };
 
@@ -2312,7 +2378,17 @@ function renderMesasAdmin(){
   const el=$('mesas-admin');if(!el)return;
   el.innerHTML=mesasTemp.map(m=>`<div class="mesa-admin-row"><span>${m.tipo==='llevar'?'🛍️':'🍽️'}</span><span>${m.nombre}</span>${m.abierta?'<span style="font-size:9px;background:#fde8e8;color:var(--rojo-d);padding:2px 6px;border-radius:50px;font-weight:800;">Con pedido</span>':''}${m.abierta?`<button class="btn-sm" style="background:#fff3cd;color:#856404;" title="Vaciar pedido atorado sin cobrar" onclick="vaciarMesa(${m.id})">🧹</button>`:''}<button class="btn-sm btn-del" onclick="quitarMesa(${m.id})">🗑️</button></div>`).join('');
 }
-window.abrirNuevaMesa=()=>{$('nm-nom').value='';$('nm-tipo').value='mesa';a('ov-nueva-mesa');};
+function sugerirNombreMesa(tipo){
+  const prefijo=tipo==='llevar'?'Para Llevar':'Mesa';
+  const usados=mesasTemp.filter(x=>x.tipo===tipo).map(x=>{
+    const m=(x.nombre||'').match(new RegExp('^'+prefijo+'\\s+(\\d+)$','i'));
+    return m?parseInt(m[1]):0;
+  });
+  const siguiente=(usados.length?Math.max(...usados):0)+1;
+  return prefijo+' '+siguiente;
+}
+window.actualizarSugerenciaMesa=()=>{$('nm-nom').value=sugerirNombreMesa($('nm-tipo').value);};
+window.abrirNuevaMesa=()=>{$('nm-tipo').value='mesa';$('nm-nom').value=sugerirNombreMesa('mesa');a('ov-nueva-mesa');};
 window.guardarNuevaMesa=()=>{
   const nom=$('nm-nom').value.trim();if(!nom){toast('⚠️ Escribe el nombre');return;}
   const maxId=mesasTemp.reduce((m,x)=>Math.max(m,x.id),0);
