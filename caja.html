@@ -215,6 +215,7 @@ function guardarYaListos(){
 }
 
 const $=id=>document.getElementById(id);
+const escHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2800);};
 const findP=id=>[...(menu?.tacos||[]),...(menu?.bebidas||[]),...(menu?.consome||[])].find(p=>p.id===id);
 const NL='\n';
@@ -297,7 +298,8 @@ function renderPendientes(){
         <div class="tc-mesa">${h.tipo==='llevar'?'🛍️':'🍽️'} ${h.mesa}</div>
         <div class="tc-total">$${h.total}</div>
       </div>
-      <div class="tc-hora">🕐 ${h.hora}${h.cliente?' · 👤 '+h.cliente:''}</div>
+      <div class="tc-hora">🕐 ${h.hora}${h.cliente?' · 👤 '+escHtml(h.cliente):''}</div>
+      ${h.notaGeneral?'<div style="background:#fff3cd;color:#856404;border-radius:5px;padding:3px 7px;font-size:11px;font-weight:800;margin-bottom:5px;">📝 '+escHtml(h.notaGeneral)+'</div>':''}
       <div class="tc-items">${items}</div>
       <div class="tc-btns">
         <button class="btn-print ${btChar?'':'auto'}" onclick="imprimirTicket('${h._id}')">
@@ -437,7 +439,7 @@ window.reimprimirTicket=async(id)=>{
 
 // ── ESC/POS ──
 function buildEscPos(h){
-  const {mesa,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,folio,platos,turno}=h;
+  const {mesa,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,folio,platos,turno,notaGeneral}=h;
   const W=32;
   const ln='-'.repeat(W);
   const row=(a,b)=>{const e=Math.max(1,W-a.length-String(b).length);return a+' '.repeat(e)+b;};
@@ -466,6 +468,7 @@ function buildEscPos(h){
   if(cliente) add('Cliente: '+cliente+NL);
   if(telefono) add('Tel: '+telefono+NL);
   if(direccion) add('Dir: '+direccion+NL);
+  if(notaGeneral){esc(0x21,0x08);add('📝 NOTA: '+notaGeneral+NL);esc(0x21,0x00);}
   add(ln+NL);
   // Productos con platos
   const idsTacos=new Set((menu?.tacos||[]).map(x=>x.id));

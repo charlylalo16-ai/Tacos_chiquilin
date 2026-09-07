@@ -734,6 +734,7 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       </div>
       <div><label>📍 Dirección</label><input type="text" id="cl-dir" placeholder="Calle, colonia..." oninput="actualizaCliente()"></div>
     </div>
+    <div class="fg" style="margin-top:9px;"><label>📝 Nota general del pedido (opcional)</label><input type="text" id="nota-general" placeholder="Ej: todo sin cebolla, para llevar en charola..." oninput="actualizaNotaGeneral()" onblur="guardarNotaGeneral()"></div>
     <div class="pedido-sec"><h4>🌮 Tacos y Platillos</h4><div id="pm-tacos"></div></div>
     <div class="pedido-sec"><h4>🥤 Bebidas</h4><div id="pm-bebidas"></div></div>
     <div class="pedido-sec"><h4>🍲 Consomé</h4><div id="pm-consome"></div></div>
@@ -972,6 +973,13 @@ async function entrar(){
   // Inicializar datos en background
   initDatos().catch(e=>console.warn('init:',e));
   suscribir();
+  // Si tras varios segundos sigue sin cargar (conexión lenta/atorada), ofrecer recargar
+  setTimeout(()=>{
+    if(!mesas||!menu){
+      const g=$('mesasGrid');
+      if(g) g.innerHTML+=`<div style="grid-column:1/-1;text-align:center;padding:12px;"><button class="btn btn-rojo" onclick="location.reload()">🔄 Recargar la página</button><p style="font-size:11px;color:var(--cafe3);margin-top:8px;">Está tardando más de lo normal — revisa tu conexión a internet</p></div>`;
+    }
+  },8000);
 }
 
 function aplicarPermisos(){
@@ -1007,15 +1015,17 @@ function suscribir(){
   suscribirGastos();
   suscribirChat();
   suscribirFiados();
-  unsubs.push(onSnapshot(doc(db,'config','menu'),s=>{if(s.exists()){menu=s.data();renderMesas();const p=document.querySelector('.page.active');if(p?.id==='page-precios')renderPrecios();}}));
-  unsubs.push(onSnapshot(doc(db,'config','mesas'),s=>{if(s.exists()){mesas=s.data().lista;renderMesas();}}));
+  unsubs.push(onSnapshot(doc(db,'config','menu'),s=>{if(s.exists()){menu=s.data();renderMesas();const p=document.querySelector('.page.active');if(p?.id==='page-precios')renderPrecios();}},
+    err=>{console.error('menu error:',err.code,err.message);toast('❌ Error al cargar el menú: '+err.message);}));
+  unsubs.push(onSnapshot(doc(db,'config','mesas'),s=>{if(s.exists()){mesas=s.data().lista;renderMesas();}},
+    err=>{console.error('mesas error:',err.code,err.message);toast('❌ Error al cargar las mesas: '+err.message);}));
   unsubs.push(onSnapshot(doc(db,'config','inventario'),s=>{
     if(s.exists()){
       inv=s.data().lista||[];
       const p=document.querySelector('.page.active');
       if(p?.id==='page-inventario') renderInvAccess();
     }
-  }));
+  },err=>{console.error('inventario error:',err.code,err.message);}));
   unsubs.push(onSnapshot(query(collection(db,'historial'),orderBy('ts','desc'),limit(2000)),s=>{
     hist=s.docs.map(d=>({...d.data(),_id:d.id}));
     const p=document.querySelector('.page.active');
@@ -1061,7 +1071,7 @@ window.renderMesas=()=>{
     const tot=calcT(m.pedido);
     const items=Object.entries(m.pedido||{}).filter(([,v])=>v>0);
     const cls=m.abierta?(lv?'llevar':'ocupada'):'';
-    const cb=lv&&m.cliente?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">👤${m.cliente}</span>`:'';
+    const cb=lv&&m.cliente?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">👤${escHtml(m.cliente)}</span>`:'';
     const ub=m.unidas?.length?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">🔗+${m.unidas.length}</span>`:'';
     const ih=items.length?items.map(([id,c])=>{const p=findP(id);if(!p)return'';return`<div class="mesa-item"><span class="nombre">${p.nombre}</span><span class="cant">${c}</span><span class="precio">$${p.precio*c}</span></div>`;}).join(''):`<p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">${lv?'Sin pedido':'Mesa libre'}</p>`;
     return`<div class="mesa-card ${cls}${lv?' llevar-card':''}">
@@ -1093,6 +1103,7 @@ window.abrirMesa=mid=>{
   const cl=$('campo-llevar');
   cl.style.display=lv?'flex':'none';
   if(lv){$('cl-nom').value=m.abierta?(m.cliente||''):'';$('cl-tel').value=m.abierta?(m.telefono||''):'';$('cl-dir').value=m.abierta?(m.direccion||''):'';}
+  $('nota-general').value=m.notaGeneral||'';
   $('cobro-box').style.display='none';$('btn-confirmar').style.display='none';$('btn-fio').style.display='none';
   $('btn-cobrar').style.display='';$('billete').value='';$('cambio').textContent='$—';
   $('unir-box').style.display='none';$('parcial-box').style.display='none';
@@ -1250,7 +1261,7 @@ async function enviarTicketPedido(){
   const now=new Date();
   const datos={
     mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',
-    telefono:m.telefono||'',direccion:m.direccion||'',
+    telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
     pedido:JSON.parse(JSON.stringify(pedTmp)),
     platos:JSON.parse(JSON.stringify(platosTemp)),
     total:calcT(pedTmp),
@@ -1293,6 +1304,15 @@ async function updTot(){
 window.actualizaCliente=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);
   if(m&&m.tipo==='llevar'){m.cliente=$('cl-nom').value.trim();m.telefono=$('cl-tel').value.trim();m.direccion=$('cl-dir').value.trim();renderMesas();}
+};
+window.actualizaNotaGeneral=()=>{
+  const m=mesas?.find(x=>x.id===mesaAct);
+  if(m) m.notaGeneral=$('nota-general').value;
+};
+window.guardarNotaGeneral=async()=>{
+  const m=mesas?.find(x=>x.id===mesaAct);
+  if(!m)return;
+  try{await saveMesas();}catch(e){toast('❌ Error al guardar: '+e.message);}
 };
 window.dividirCuenta=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);
@@ -1531,7 +1551,7 @@ window.confirmarCobroParcial=async()=>{
     const detalle={};
     Object.entries(pedidoParcial).filter(([,c])=>c>0).forEach(([id,c])=>{const p=findP(id);if(p)detalle[id]={cant:c,precio:p.precio,nombre:p.nombre,subtotal:p.precio*c};});
     const bil=parseFloat($('parcial-billete').value)||0,cam=bil>0?bil-tot:null;
-    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',
+    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
       pedido:pedidoParcial,detalle,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,
       hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),
       cobradoPor:S?.nombre||'',impreso:false,dividido:true,ts:serverTimestamp()};
@@ -1561,13 +1581,17 @@ window.confirmarCobroParcial=async()=>{
     const quedaTotal=calcT(m.pedido);
     if(quedaTotal===0){
       liberarMesasUnidas(m,mesas);
-      m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+      m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
       pedTmp={};platosTemp={};
     }
     await saveMesas();
 
-    mostrarTicket({folio,nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',
-      pedido:pedidoParcial,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,hora:td.hora,fecha:td.fecha,cobradoPor:S?.nombre||''});
+    ticketDatosActuales={folio,nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
+      pedido:pedidoParcial,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,hora:td.hora,fecha:td.fecha,cobradoPor:S?.nombre||''};
+    if(confirm('¿Imprimir ticket de $'+tot+'?')){
+      const ok=await enviarAImpresora(buildEscPos(ticketDatosActuales));
+      if(ok) toast('🖨️ Imprimiendo...');
+    }
 
     if(quedaTotal===0){c('ov-mesa');}
     else{renderPedMod();pagoParcialSel={};renderLineasParcial();$('parcial-billete').value='';$('parcial-cambio').textContent='$—';}
@@ -1634,10 +1658,10 @@ window.confirmarCobro=async()=>{
       const p=findP(id);
       if(p) detalle[id]={cant:c,precio:p.precio,nombre:p.nombre,subtotal:p.precio*c};
     });
-    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',pedido:JSON.parse(JSON.stringify(m.pedido)),detalle,platos:JSON.parse(JSON.stringify(platosTemp)),total:tot,billete:bil||null,cambio:cam,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:S?.nombre||'',impreso:false,ts:serverTimestamp()};
+    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',pedido:JSON.parse(JSON.stringify(m.pedido)),detalle,platos:JSON.parse(JSON.stringify(platosTemp)),total:tot,billete:bil||null,cambio:cam,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:S?.nombre||'',impreso:false,ts:serverTimestamp()};
     await addDoc(collection(db,'historial'),td);
     liberarMesasUnidas(m,mesas);
-    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;pedTmp={};platosTemp={};
+    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';pedTmp={};platosTemp={};
     await saveMesas();
     c('ov-mesa');
     const msg=cam!==null&&cam>=0?('✅ $'+tot+' — Cambio: $'+cam):('✅ '+m.nombre+' cobrada $'+tot);
@@ -1872,7 +1896,7 @@ window.renderHist=()=>{
     const cp=h.cobradoPor?` · 👤 ${h.cobradoPor}`:'';
     return`<div class="historial-item ${lv?'llevar-hist':''}">
       <div class="hi-header"><span class="hi-mesa ${lv?'llevar':''}">${lv?'🛍️':'🍽️'} ${h.mesa}</span>${eAdmin()?('<span class="hi-total">$'+h.total+'</span>'):''}</div>
-      ${h.cliente?('<div style="background:#fff3e0;border-radius:5px;padding:2px 7px;display:inline-block;font-size:10px;font-weight:800;color:#e65100;margin-bottom:2px;">👤 '+h.cliente+'</div>'):''}
+      ${h.cliente?('<div style="background:#fff3e0;border-radius:5px;padding:2px 7px;display:inline-block;font-size:10px;font-weight:800;color:#e65100;margin-bottom:2px;">👤 '+escHtml(h.cliente)+'</div>'):''}
       <div class="hi-hora">🕐 ${h.hora} — ${h.fecha}${cp}</div>
       <div class="hi-items">${items}</div>
       ${ci?('<div class="hi-cobro">'+ci+'</div>'):''}
@@ -1989,7 +2013,7 @@ window.limpiarPeriodo=async()=>{
 
 // TICKET
 function buildTicket(datos){
-  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,cobradoPor,platos}=datos;
+  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,cobradoPor,platos,notaGeneral}=datos;
   const ln='--------------------------------';
   const ctr=t=>{const s=Math.max(0,Math.floor((32-t.length)/2));return' '.repeat(s)+t;};
   const row=(i,d)=>{const e=Math.max(1,32-i.length-String(d).length);return i+' '.repeat(e)+d;};
@@ -2001,6 +2025,7 @@ function buildTicket(datos){
   if(cliente)t+=`👤 ${cliente}\n`;
   if(telefono)t+=`📞 ${telefono}\n`;
   if(direccion)t+=`📍 ${direccion}\n`;
+  if(notaGeneral)t+=`📝 NOTA: ${notaGeneral}\n`;
   t+=ln+'\n';
     // Tacos: un renglón por plato; bebidas/consomé normal
   const idsTacos=new Set((menu?.tacos||[]).map(x=>x.id));
@@ -2061,7 +2086,7 @@ window.ticketDesdeMesa=()=>{
   if(!m||calcT(pedTmp)===0){toast('⚠️ No hay productos en el pedido');return;}
   const now=new Date();
   mostrarTicket({
-    nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',
+    nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
     pedido:pedTmp,platos:JSON.parse(JSON.stringify(platosTemp||m.platos||{})),total:calcT(pedTmp),billete:null,cambio:null,
     hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
     fecha:now.toLocaleDateString('es-MX'),cobradoPor:''
@@ -2070,7 +2095,7 @@ window.ticketDesdeMesa=()=>{
 window.verTicketMesa=mid=>{
   const m=mesas?.find(x=>x.id===mid);if(!m||calcT(m.pedido)===0){toast('⚠️ Sin pedido');return;}
   const now=new Date();
-  mostrarTicket({nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',pedido:m.pedido,platos:m.platos||{},total:calcT(m.pedido),billete:null,cambio:null,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:''});
+  mostrarTicket({nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',pedido:m.pedido,platos:m.platos||{},total:calcT(m.pedido),billete:null,cambio:null,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:''});
 };
 window.ticketHist=i=>{
   const h=getHistFilt()[i];if(!h)return;
@@ -2195,6 +2220,7 @@ function buildEscPos(datos){
   if(cliente) add('Cliente: '+cliente+NL);
   if(telefono) add('Tel: '+telefono+NL);
   if(direccion) add('Dir: '+direccion+NL);
+  if(datos.notaGeneral){esc(0x21,0x08);add('📝 NOTA: '+datos.notaGeneral+NL);esc(0x21,0x00);}
   add(ln+NL);
   // Productos — tacos por plato, bebidas normal
   const idsTacosEsc=new Set((menu?.tacos||[]).map(x=>x.id));
@@ -2400,7 +2426,7 @@ window.vaciarMesa=id=>{
   const m=mesasTemp.find(x=>x.id===id);if(!m)return;
   if(!confirm('¿Vaciar el pedido de '+m.nombre+'? Esto NO cobra ni registra ninguna venta, solo libera la mesa.'))return;
   liberarMesasUnidas(m,mesasTemp);
-  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
   renderMesasAdmin();
   toast('🧹 Mesa vaciada — presiona "Guardar mesas en la nube" para confirmar');
 };
@@ -2518,7 +2544,7 @@ window.confirmarFiado=async()=>{
     }
     // Limpiar mesa igual que al cobrar
     liberarMesasUnidas(m,mesas);
-    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;
+    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
     pedTmp={};platosTemp={};
     await saveMesas();
     c('ov-mesa');
