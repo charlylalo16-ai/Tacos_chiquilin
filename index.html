@@ -1888,7 +1888,9 @@ window.imprimirEtiquetaBarras=()=>{
   if(!w){toast('⚠️ Permite ventanas emergentes');return;}
   const nombreSeguro=nombre.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   w.document.write('<!DOCTYPE html><html><head><title>Etiqueta</title><style>@page{margin:4mm;}body{font-family:Nunito,Arial,sans-serif;text-align:center;margin:0;padding:8px;}p{font-weight:800;font-size:13px;margin:6px 0 0;}</style></head><body>'+svg.outerHTML+'<p>'+nombreSeguro+'</p></body></html>');
-  w.document.close();setTimeout(()=>{w.focus();w.print();},400);
+  w.document.close();
+  w.onafterprint=()=>w.close();
+  setTimeout(()=>{w.focus();w.print();},400);
 };
 
 window.exportCSV=()=>{
@@ -2416,7 +2418,9 @@ window.imprimirNormal=(txt)=>{
   const w=window.open('','_blank','width=300,height=600');
   if(!w){toast('⚠️ Permite ventanas emergentes');return;}
   w.document.write('<!DOCTYPE html><html><head><title>Ticket</title><style>@page{size:58mm auto;margin:1mm;}body{font-family:Courier New,monospace;font-size:10px;width:54mm;white-space:pre;line-height:1.4;margin:0;padding:1mm;}</style></head><body>'+txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+'</body></html>');
-  w.document.close();setTimeout(()=>{w.focus();w.print();},400);
+  w.document.close();
+  w.onafterprint=()=>w.close();
+  setTimeout(()=>{w.focus();w.print();},400);
 };
 
 // Guardar datos en ticketDatosActuales al mostrar el ticket
