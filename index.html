@@ -535,6 +535,8 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       <input type="text" id="inv-buscar" placeholder="🔍 Buscar..." oninput="renderInv()">
       <select id="inv-cat" onchange="renderInv()"><option value="">Todas</option><option value="Bebidas">🥤 Bebidas</option><option value="Desechables">🥡 Desechables</option></select>
       <button class="btn btn-rojo" onclick="abrirProd()">＋</button>
+      <button class="btn btn-verde" onclick="abrirScanner('entrada')">📥 Entrada</button>
+      <button class="btn btn-rojo" onclick="abrirScanner('salida')">📤 Salida</button>
       <button class="btn btn-cafe" onclick="exportCSV()">📥 CSV</button>
     </div>
     <div class="tabla-wrap">
@@ -708,6 +710,12 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       <div class="fg"><label>Mínimo</label><input type="number" id="p-min" min="0" placeholder="0"></div>
     </div>
     <div class="fg"><label>💰 Costo unitario ($) <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#aaa;">opcional</span></label><input type="number" id="p-costo" min="0" step="0.01" placeholder="¿Cuánto te costó cada unidad?"></div>
+    <div class="fg"><label>Código de barras <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#aaa;">opcional</span></label>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="p-cod" placeholder="Escanéalo o escríbelo" style="flex:1;">
+        <button type="button" class="btn btn-cafe" style="flex:0;padding:0 12px;" onclick="abrirScanner('campo','p-cod')">📷</button>
+      </div>
+    </div>
     <div class="modal-btns"><button class="btn btn-gris" onclick="c('ov-prod')">Cancelar</button><button class="btn btn-rojo" onclick="guardarProd()">Guardar</button></div>
   </div>
 </div>
@@ -875,8 +883,21 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   </div>
 </div>
 
+<div class="overlay" id="ov-scan">
+  <div class="modal">
+    <div class="modal-header"><h2 id="scan-tit">📷 Escanear</h2><button class="btn btn-gris btn-sm" onclick="cerrarScanner()">✕</button></div>
+    <div id="scan-reader"></div>
+    <div id="scan-log" style="max-height:180px;overflow-y:auto;margin-top:8px;"></div>
+    <div id="scan-noreconocido" style="display:none;margin-top:8px;">
+      <label style="font-weight:800;font-size:11px;color:var(--cafe3);text-transform:uppercase;">¿A qué producto pertenece este código?</label>
+      <div id="scan-lista-productos"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged,updateProfile}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -1735,14 +1756,14 @@ window.renderInv=()=>{
     return`<tr><td><strong>${p.nombre}</strong></td><td><span class="badge ${cc}">${p.categoria}</span></td><td>${p.unidad}</td><td><div class="qty-ctrl" style="justify-content:center;"><button class="qty-btn qty-minus" onclick="ajustarStock('${p.id}',-1)">−</button><span class="qty-num" id="inv-stk-${p.id}" onclick="editarStockExacto('${p.id}')" title="Toca para escribir la cantidad exacta">${p.stock}</span><button class="qty-btn qty-plus" onclick="ajustarStock('${p.id}',1)">+</button></div></td><td style="color:#999">${p.min}</td><td>${costoTxt}</td><td><span class="badge ${cls}">${lbl}</span></td><td><div class="acciones"><button class="btn-sm btn-edit" onclick="editProd('${p.id}')">✏️</button><button class="btn-sm btn-del" onclick="delProd('${p.id}')">🗑️</button></div></td></tr>`;
   }).join('');
 };
-window.abrirProd=()=>{editProdId=null;$('prod-tit').textContent='➕ Nuevo Producto';['p-nom','p-stk','p-min','p-costo'].forEach(id=>$(id).value='');a('ov-prod');};
-window.editProd=id=>{const p=inv.find(x=>x.id===id);editProdId=id;$('prod-tit').textContent='✏️ Editar';$('p-nom').value=p.nombre;$('p-cat').value=p.categoria;$('p-uni').value=p.unidad;$('p-stk').value=p.stock;$('p-min').value=p.min;$('p-costo').value=p.costo||'';a('ov-prod');};
+window.abrirProd=()=>{editProdId=null;$('prod-tit').textContent='➕ Nuevo Producto';['p-nom','p-stk','p-min','p-costo','p-cod'].forEach(id=>$(id).value='');a('ov-prod');};
+window.editProd=id=>{const p=inv.find(x=>x.id===id);editProdId=id;$('prod-tit').textContent='✏️ Editar';$('p-nom').value=p.nombre;$('p-cat').value=p.categoria;$('p-uni').value=p.unidad;$('p-stk').value=p.stock;$('p-min').value=p.min;$('p-costo').value=p.costo||'';$('p-cod').value=p.codigoBarras||'';a('ov-prod');};
 let guardandoProd=false;
 window.guardarProd=async()=>{
   if(guardandoProd)return;
   const nom=$('p-nom').value.trim();if(!nom){toast('⚠️ Escribe el nombre');return;}
   const costoVal=parseFloat($('p-costo').value)||0;
-  const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null};
+  const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null,codigoBarras:$('p-cod').value.trim()||null};
   guardandoProd=true;
   try{
     if(editProdId){const i=inv.findIndex(x=>x.id===editProdId);inv[i]={...inv[i],...obj};await saveInv();toast('✅ Actualizado');}
@@ -1768,6 +1789,78 @@ window.editarStockExacto=async(id)=>{
   renderInv();
   try{await saveInv();toast('📦 Actualizado');}catch(e){toast('❌ Error al guardar: '+e.message);}
 };
+
+// ── ESCÁNER DE CÓDIGO DE BARRAS ──
+let scanner=null,scanModo=null,scanTargetInput=null;
+let ultimoCodigo=null,ultimoCodigoTs=0;
+let codigoPendiente=null;
+
+window.abrirScanner=(modo,targetInputId)=>{
+  if(typeof Html5QrcodeScanner==='undefined'){toast('❌ No se pudo cargar el lector de códigos — revisa tu conexión');return;}
+  scanModo=modo;scanTargetInput=targetInputId||null;
+  $('scan-tit').textContent=modo==='entrada'?'📥 Escanear entrada':modo==='salida'?'📤 Escanear salida':'📷 Escanear código';
+  $('scan-log').innerHTML='';$('scan-noreconocido').style.display='none';
+  a('ov-scan');
+  scanner=new Html5QrcodeScanner('scan-reader',{fps:10,qrbox:{width:250,height:150}},false);
+  scanner.render(onScanExitoso,()=>{});
+};
+
+window.cerrarScanner=()=>{
+  if(scanner){scanner.clear().catch(()=>{});scanner=null;}
+  c('ov-scan');
+};
+
+async function onScanExitoso(codigo){
+  const ahora=Date.now();
+  if(codigo===ultimoCodigo&&ahora-ultimoCodigoTs<2000)return; // evitar doble conteo de la misma lectura
+  ultimoCodigo=codigo;ultimoCodigoTs=ahora;
+
+  if(scanModo==='campo'){
+    if(scanTargetInput)$(scanTargetInput).value=codigo;
+    window.cerrarScanner();
+    return;
+  }
+
+  const p=inv.find(x=>x.codigoBarras===codigo);
+  if(!p){
+    codigoPendiente=codigo;
+    mostrarAsignarCodigo();
+    return;
+  }
+  const delta=scanModo==='entrada'?1:-1;
+  p.stock=Math.max(0,(p.stock||0)+delta);
+  try{await saveInv();}catch(e){toast('❌ Error al guardar: '+e.message);return;}
+  renderInv();
+  agregarLogScan((delta>0?'➕ ':'➖ ')+p.nombre+': '+p.stock);
+}
+
+function agregarLogScan(texto){
+  const log=$('scan-log');if(!log)return;
+  const linea=document.createElement('div');
+  linea.style.cssText='padding:5px 0;font-size:12px;font-weight:700;border-bottom:1px solid rgba(26,8,0,0.06);';
+  linea.textContent=texto;
+  log.prepend(linea);
+}
+
+function mostrarAsignarCodigo(){
+  $('scan-noreconocido').style.display='block';
+  $('scan-lista-productos').innerHTML=inv.map(p=>
+    `<button class="btn btn-gris" style="width:100%;margin-bottom:5px;text-align:left;" onclick="asignarCodigoA('${p.id}')">${p.nombre}</button>`
+  ).join('');
+}
+
+window.asignarCodigoA=async(id)=>{
+  const p=inv.find(x=>x.id===id);if(!p||!codigoPendiente)return;
+  p.codigoBarras=codigoPendiente;
+  const delta=scanModo==='entrada'?1:-1;
+  p.stock=Math.max(0,(p.stock||0)+delta);
+  try{await saveInv();}catch(e){toast('❌ Error al guardar: '+e.message);return;}
+  renderInv();
+  agregarLogScan('🔗 '+p.nombre+' enlazado — '+(delta>0?'➕ ':'➖ ')+p.stock);
+  $('scan-noreconocido').style.display='none';
+  codigoPendiente=null;
+};
+
 window.exportCSV=()=>{
   const h=['Producto','Categoría','Unidad','Stock','Mín','Costo unitario','Estado'];
   const r=inv.map(p=>[p.nombre,p.categoria,p.unidad,p.stock,p.min,p.costo||'',p.stock===0?'Agotado':p.stock<=p.min?'Bajo':'OK']);
@@ -2814,6 +2907,8 @@ document.addEventListener('click', e=>{
 ['ov-prod','ov-item','ov-mesa','ov-usr','ov-ticket','ov-nueva-mesa','ov-gasto','ov-fiado','ov-abono'].forEach(id=>{
   const el=$(id);if(el)el.addEventListener('click',function(e){if(e.target===this)c(id);});
 });
+// ov-scan aparte: cerrar aquí debe apagar la cámara, no solo ocultar el overlay
+$('ov-scan')?.addEventListener('click',function(e){if(e.target===this)window.cerrarScanner();});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-screen').style.display!=='none')window.loginEmail();});
 </script>
 </body>
