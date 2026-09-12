@@ -712,8 +712,12 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
     <div class="fg"><label>💰 Costo unitario ($) <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#aaa;">opcional</span></label><input type="number" id="p-costo" min="0" step="0.01" placeholder="¿Cuánto te costó cada unidad?"></div>
     <div class="fg"><label>Código de barras <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#aaa;">opcional</span></label>
       <div style="display:flex;gap:6px;">
-        <input type="text" id="p-cod" placeholder="Escanéalo o escríbelo" style="flex:1;">
-        <button type="button" class="btn btn-cafe" style="flex:0;padding:0 12px;" onclick="abrirScanner('campo','p-cod')">📷</button>
+        <input type="text" id="p-cod" placeholder="Escanéalo, escríbelo o genera uno" style="flex:1;">
+        <button type="button" class="btn btn-cafe" style="flex:0;padding:0 12px;" onclick="abrirScanner('campo','p-cod')" title="Escanear">📷</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button type="button" class="btn btn-gris" style="flex:1;font-size:11px;padding:8px;" onclick="generarCodigoInterno()">🏷️ Generar código</button>
+        <button type="button" class="btn btn-gris" style="flex:1;font-size:11px;padding:8px;" onclick="imprimirEtiquetaBarras()">🖨️ Imprimir etiqueta</button>
       </div>
     </div>
     <div class="modal-btns"><button class="btn btn-gris" onclick="c('ov-prod')">Cancelar</button><button class="btn btn-rojo" onclick="guardarProd()">Guardar</button></div>
@@ -896,8 +900,10 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
 </div>
 
 <div class="toast" id="toast"></div>
+<svg id="barcode-temp" style="display:none"></svg>
 
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,onAuthStateChanged,updateProfile}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -1859,6 +1865,30 @@ window.asignarCodigoA=async(id)=>{
   agregarLogScan('🔗 '+p.nombre+' enlazado — '+(delta>0?'➕ ':'➖ ')+p.stock);
   $('scan-noreconocido').style.display='none';
   codigoPendiente=null;
+};
+
+window.generarCodigoInterno=()=>{
+  let code;
+  do{ code='INT'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*100); }
+  while(inv.some(x=>x.codigoBarras===code));
+  $('p-cod').value=code;
+  toast('🏷️ Código generado');
+};
+
+window.imprimirEtiquetaBarras=()=>{
+  const codigo=$('p-cod').value.trim();
+  if(!codigo){toast('⚠️ Primero escribe, escanea o genera un código');return;}
+  if(typeof JsBarcode==='undefined'){toast('❌ No se pudo cargar el generador de código de barras');return;}
+  const nombre=$('p-nom').value.trim()||'Producto';
+  const svg=$('barcode-temp');
+  try{
+    JsBarcode(svg,codigo,{format:'CODE128',width:2,height:60,displayValue:true,fontSize:14,margin:5});
+  }catch(e){toast('❌ Este código no se puede imprimir como código de barras: '+e.message);return;}
+  const w=window.open('','_blank','width=320,height=320');
+  if(!w){toast('⚠️ Permite ventanas emergentes');return;}
+  const nombreSeguro=nombre.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  w.document.write('<!DOCTYPE html><html><head><title>Etiqueta</title><style>@page{margin:4mm;}body{font-family:Nunito,Arial,sans-serif;text-align:center;margin:0;padding:8px;}p{font-weight:800;font-size:13px;margin:6px 0 0;}</style></head><body>'+svg.outerHTML+'<p>'+nombreSeguro+'</p></body></html>');
+  w.document.close();setTimeout(()=>{w.focus();w.print();},400);
 };
 
 window.exportCSV=()=>{
