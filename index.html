@@ -538,6 +538,7 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       <button class="btn btn-verde" onclick="abrirScanner('entrada')">📥 Entrada</button>
       <button class="btn btn-rojo" onclick="abrirScanner('salida')">📤 Salida</button>
       <button class="btn btn-cafe" onclick="exportCSV()">📥 CSV</button>
+      <button class="btn btn-amarillo" onclick="abrirListaCompras()">🛒 Comprar</button>
     </div>
     <div class="tabla-wrap">
       <table><thead><tr><th>Producto</th><th>Cat.</th><th>Unidad</th><th>Stock</th><th>Mín.</th><th>Costo</th><th>Estado</th><th></th></tr></thead><tbody id="invTbody"></tbody></table>
@@ -724,6 +725,14 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
   </div>
 </div>
 
+<div class="overlay" id="ov-compras">
+  <div class="modal">
+    <div class="modal-header"><h2>🛒 Lista de compras</h2><button class="btn btn-gris btn-sm" onclick="c('ov-compras')">✕</button></div>
+    <div id="compras-lista"></div>
+    <div class="modal-btns"><button class="btn btn-gris" onclick="c('ov-compras')">Cerrar</button><button class="btn btn-verde" onclick="copiarListaCompras()">📋 Copiar para WhatsApp</button></div>
+  </div>
+</div>
+
 <div class="overlay" id="ov-item">
   <div class="modal">
     <div class="modal-header"><h2 id="item-tit">Nuevo producto</h2><button class="btn btn-gris btn-sm" onclick="c('ov-item')">✕</button></div>
@@ -752,9 +761,17 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
     <div class="pedido-sec"><h4>🍲 Consomé</h4><div id="pm-consome"></div></div>
     <div class="total-bar"><span class="tl">Total</span><span class="ta" id="mesa-tot">$0</span></div>
     <div class="cobro-box" id="cobro-box" style="display:none;">
-      <label>Con cuánto paga ($)</label>
-      <input type="number" id="billete" placeholder="Ej: 200" oninput="calcCambio()" min="0">
-      <div class="cambio-display"><span class="cl">Cambio:</span><span class="ca" id="cambio">$—</span></div>
+      <label>Método de pago</label>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button type="button" class="btn-fecha active" id="mp-efectivo" onclick="setMetodoPago('efectivo')">💵 Efectivo</button>
+        <button type="button" class="btn-fecha" id="mp-tarjeta" onclick="setMetodoPago('tarjeta')">💳 Tarjeta</button>
+        <button type="button" class="btn-fecha" id="mp-transferencia" onclick="setMetodoPago('transferencia')">🏦 Transferencia</button>
+      </div>
+      <div id="cobro-billete-wrap">
+        <label>Con cuánto paga ($)</label>
+        <input type="number" id="billete" placeholder="Ej: 200" oninput="calcCambio()" min="0">
+        <div class="cambio-display"><span class="cl">Cambio:</span><span class="ca" id="cambio">$—</span></div>
+      </div>
     </div>
     <div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;">
       <button class="btn btn-gris" onclick="c('ov-mesa')" style="flex:0;padding:9px 12px;">✕</button>
@@ -771,9 +788,17 @@ tbody td{padding:9px 12px;font-size:12px;font-weight:600;vertical-align:middle;}
       <label>Selecciona lo que pagará esta persona</label>
       <div id="parcial-lineas"></div>
       <div class="total-bar" style="margin-top:8px;"><span class="tl">Subtotal seleccionado</span><span class="ta" id="parcial-subtotal">$0</span></div>
-      <label style="margin-top:8px;">Con cuánto paga ($)</label>
-      <input type="number" id="parcial-billete" placeholder="Ej: 100" oninput="calcCambioParcial()" min="0">
-      <div class="cambio-display"><span class="cl">Cambio:</span><span class="ca" id="parcial-cambio">$—</span></div>
+      <label style="margin-top:8px;">Método de pago</label>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button type="button" class="btn-fecha active" id="mpp-efectivo" onclick="setMetodoPagoParcial('efectivo')">💵 Efectivo</button>
+        <button type="button" class="btn-fecha" id="mpp-tarjeta" onclick="setMetodoPagoParcial('tarjeta')">💳 Tarjeta</button>
+        <button type="button" class="btn-fecha" id="mpp-transferencia" onclick="setMetodoPagoParcial('transferencia')">🏦 Transferencia</button>
+      </div>
+      <div id="parcial-billete-wrap">
+        <label>Con cuánto paga ($)</label>
+        <input type="number" id="parcial-billete" placeholder="Ej: 100" oninput="calcCambioParcial()" min="0">
+        <div class="cambio-display"><span class="cl">Cambio:</span><span class="ca" id="parcial-cambio">$—</span></div>
+      </div>
       <button class="btn btn-verde" style="width:100%;margin-top:9px;" onclick="confirmarCobroParcial()" id="btn-confirmar-parcial">✅ Cobrar selección</button>
     </div>
   </div>
@@ -918,6 +943,7 @@ const db=getFirestore(app);
 let S=null; // sesion
 let menu=null,mesas=null,inv=null,hist=[];
 let unsubs=[];
+let intervaloMesas=null;
 let fEst='todos',editProdId=null;
 let mesaAct=null,pedTmp={};
 let pagoParcialSel={},procesandoPagoParcial=false;
@@ -1007,6 +1033,11 @@ async function entrar(){
       if(g) g.innerHTML+=`<div style="grid-column:1/-1;text-align:center;padding:12px;"><button class="btn btn-rojo" onclick="location.reload()">🔄 Recargar la página</button><p style="font-size:11px;color:var(--cafe3);margin-top:8px;">Está tardando más de lo normal — revisa tu conexión a internet</p></div>`;
     }
   },8000);
+  // Refrescar el tiempo de mesa abierta cada 30s, solo si esa pestaña está activa
+  if(intervaloMesas)clearInterval(intervaloMesas);
+  intervaloMesas=setInterval(()=>{
+    if(document.querySelector('.page.active')?.id==='page-mesas') renderMesas();
+  },30000);
 }
 
 function aplicarPermisos(){
@@ -1101,12 +1132,20 @@ window.renderMesas=()=>{
     const cb=lv&&m.cliente?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">👤${escHtml(m.cliente)}</span>`:'';
     const ub=m.unidas?.length?`<span style="background:rgba(255,255,255,0.25);border-radius:50px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;">🔗+${m.unidas.length}</span>`:'';
     const ih=items.length?items.map(([id,c])=>{const p=findP(id);if(!p)return'';return`<div class="mesa-item"><span class="nombre">${p.nombre}</span><span class="cant">${c}</span><span class="precio">$${p.precio*c}</span></div>`;}).join(''):`<p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">${lv?'Sin pedido':'Mesa libre'}</p>`;
+    let tiempoHtml='';
+    if(m.abierta&&m.abiertaEn){
+      const min=Math.floor((Date.now()-m.abiertaEn)/60000);
+      const txt=min<60?min+' min':Math.floor(min/60)+'h '+(min%60)+'min';
+      const alerta=min>=40;
+      tiempoHtml=`<div style="font-size:9px;font-family:Nunito,sans-serif;font-weight:700;${alerta?'color:#e65100;opacity:1;':'opacity:.7;'}">⏱ ${txt}</div>`;
+    }
     return`<div class="mesa-card ${cls}${lv?' llevar-card':''}">
       <div class="mesa-header ${cls}">
         <span class="mesa-num">${em} ${m.nombre}${cb}${ub}</span>
         <div style="text-align:right;">
           <span class="mesa-total-show">${m.abierta?'$'+tot:'Libre'}</span>
           ${m.abierta&&m.abiertaPor?'<div style="font-size:9px;opacity:.7;font-family:Nunito,sans-serif;font-weight:700;">👤 '+m.abiertaPor+'</div>':''}
+          ${tiempoHtml}
         </div>
       </div>
       <div class="mesa-body">${ih}</div>
@@ -1322,7 +1361,7 @@ async function updTot(){
     m.pedido=JSON.parse(JSON.stringify(pedTmp));
     m.platos=JSON.parse(JSON.stringify(platosTemp));
     m.abierta=Object.values(pedTmp).some(v=>v>0);
-    if(m.abierta&&!m.abiertaPor) m.abiertaPor=S?.nombre||'';
+    if(m.abierta&&!m.abiertaPor){ m.abiertaPor=S?.nombre||''; m.abiertaEn=Date.now(); }
     await saveMesas();
   }
   calcCambio();
@@ -1408,11 +1447,12 @@ window.unirMesa=async(guestId)=>{
     const marcados=(lista||[]).map(pl=>({...pl,_fusionDe:guestId}));
     platosTemp[id]=(platosTemp[id]||[]).concat(marcados);
   });
-  g.pedido={};g.platos={};g.abierta=false;g.cliente='';g.telefono='';g.direccion='';g.abiertaPor='';g.ticketCajaId=null;
+  g.pedido={};g.platos={};g.abierta=false;g.cliente='';g.telefono='';g.direccion='';g.abiertaPor='';g.ticketCajaId=null;g.abiertaEn=null;
   g.fusionadaCon=mesaAct;
   m.unidas=[...(m.unidas||[]),guestId];
   m.pedido=JSON.parse(JSON.stringify(pedTmp));m.platos=JSON.parse(JSON.stringify(platosTemp));
   m.abierta=true;
+  if(!m.abiertaEn) m.abiertaEn=Date.now();
   try{ await saveMesas(); }catch(e){ toast('❌ Error al guardar: '+e.message); return; }
   toast('🔗 '+g.nombre+' unida a '+m.nombre);
   $('mesa-tit').textContent=tituloMesaConUnidas(m);
@@ -1446,6 +1486,7 @@ window.desvincularMesa=async(guestId)=>{
   g.pedido=gPedido;g.platos=gPlatos;
   g.cliente=info.cliente||'';g.telefono=info.telefono||'';g.direccion=info.direccion||'';
   g.abierta=Object.values(gPedido).some(v=>v>0);
+  g.abiertaEn=g.abierta?Date.now():null;
   g.fusionadaCon=null;
   m.unidas=(m.unidas||[]).filter(id=>id!==guestId);
   if(m.fusionFlat)delete m.fusionFlat[guestId];
@@ -1487,6 +1528,18 @@ function buildLineasCobrables(){
   return lineas;
 }
 
+let metodoPago='efectivo',metodoPagoParcial='efectivo';
+window.setMetodoPago=(m)=>{
+  metodoPago=m;
+  ['efectivo','tarjeta','transferencia'].forEach(x=>$('mp-'+x)?.classList.toggle('active',x===m));
+  $('cobro-billete-wrap').style.display=m==='efectivo'?'':'none';
+};
+window.setMetodoPagoParcial=(m)=>{
+  metodoPagoParcial=m;
+  ['efectivo','tarjeta','transferencia'].forEach(x=>$('mpp-'+x)?.classList.toggle('active',x===m));
+  $('parcial-billete-wrap').style.display=m==='efectivo'?'':'none';
+};
+
 window.togglePagoParcial=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);
   if(!m||calcT(pedTmp)===0){toast('⚠️ No hay pedido');return;}
@@ -1494,7 +1547,7 @@ window.togglePagoParcial=()=>{
   $('cobro-box').style.display='none';$('btn-confirmar').style.display='none';$('btn-fio').style.display='none';$('btn-cobrar').textContent='💳 Cobrar';
   b.style.display=show?'':'none';
   pagoParcialSel={};
-  if(show){renderLineasParcial();$('parcial-billete').value='';$('parcial-cambio').textContent='$—';}
+  if(show){renderLineasParcial();$('parcial-billete').value='';$('parcial-cambio').textContent='$—';window.setMetodoPagoParcial('efectivo');}
 };
 
 function renderLineasParcial(){
@@ -1577,9 +1630,10 @@ window.confirmarCobroParcial=async()=>{
     const now=new Date();
     const detalle={};
     Object.entries(pedidoParcial).filter(([,c])=>c>0).forEach(([id,c])=>{const p=findP(id);if(p)detalle[id]={cant:c,precio:p.precio,nombre:p.nombre,subtotal:p.precio*c};});
-    const bil=parseFloat($('parcial-billete').value)||0,cam=bil>0?bil-tot:null;
+    const bil=metodoPagoParcial==='efectivo'?(parseFloat($('parcial-billete').value)||0):tot;
+    const cam=metodoPagoParcial==='efectivo'?(bil>0?bil-tot:null):null;
     const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
-      pedido:pedidoParcial,detalle,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,
+      pedido:pedidoParcial,detalle,platos:platosParcial,total:tot,billete:metodoPagoParcial==='efectivo'?(bil||null):null,cambio:cam,metodoPago:metodoPagoParcial,
       hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),
       cobradoPor:S?.nombre||'',impreso:false,dividido:true,ts:serverTimestamp()};
     await addDoc(collection(db,'historial'),td);
@@ -1608,13 +1662,13 @@ window.confirmarCobroParcial=async()=>{
     const quedaTotal=calcT(m.pedido);
     if(quedaTotal===0){
       liberarMesasUnidas(m,mesas);
-      m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
+      m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';m.abiertaEn=null;
       pedTmp={};platosTemp={};
     }
     await saveMesas();
 
     ticketDatosActuales={folio,nombre:m.nombre,cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',
-      pedido:pedidoParcial,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,hora:td.hora,fecha:td.fecha,cobradoPor:S?.nombre||''};
+      pedido:pedidoParcial,platos:platosParcial,total:tot,billete:bil||null,cambio:cam,metodoPago:metodoPagoParcial,hora:td.hora,fecha:td.fecha,cobradoPor:S?.nombre||''};
     if(confirm('¿Imprimir ticket de $'+tot+'?')){
       const ok=await enviarAImpresora(buildEscPos(ticketDatosActuales));
       if(ok) toast('🖨️ Imprimiendo...');
@@ -1637,7 +1691,7 @@ window.toggleCobro=()=>{
   const b=$('cobro-box');const show=b.style.display==='none';
   b.style.display=show?'':'none';$('btn-confirmar').style.display=show?'':'none';$('btn-fio').style.display=show?'':'none';
   $('btn-cobrar').textContent=show?'✏️ Editar':'💳 Cobrar';
-  if(show)$('billete').focus();
+  if(show){window.setMetodoPago('efectivo');$('billete').focus();}
 };
 window.calcCambio=()=>{
   const m=mesas?.find(x=>x.id===mesaAct);if(!m)return;
@@ -1676,7 +1730,8 @@ window.confirmarCobro=async()=>{
   btnConf.style.opacity='.6';
 
   try{
-    const bil=parseFloat($('billete').value)||0,cam=bil>0?bil-tot:null;
+    const bil=metodoPago==='efectivo'?(parseFloat($('billete').value)||0):tot;
+    const cam=metodoPago==='efectivo'?(bil>0?bil-tot:null):null;
     const folio=await getSiguienteFolio();
     if(inv){Object.entries(m.pedido).forEach(([id,c])=>{const p=findP(id);if(p?.inv){const it=inv.find(x=>x.id===p.inv);if(it)it.stock=Math.max(0,it.stock-c);}});await saveInv();}
     const now=new Date();
@@ -1685,13 +1740,13 @@ window.confirmarCobro=async()=>{
       const p=findP(id);
       if(p) detalle[id]={cant:c,precio:p.precio,nombre:p.nombre,subtotal:p.precio*c};
     });
-    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',pedido:JSON.parse(JSON.stringify(m.pedido)),detalle,platos:JSON.parse(JSON.stringify(platosTemp)),total:tot,billete:bil||null,cambio:cam,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:S?.nombre||'',impreso:false,ts:serverTimestamp()};
+    const td={folio,mesa:m.nombre,tipo:m.tipo||'mesa',cliente:m.cliente||'',telefono:m.telefono||'',direccion:m.direccion||'',notaGeneral:m.notaGeneral||'',pedido:JSON.parse(JSON.stringify(m.pedido)),detalle,platos:JSON.parse(JSON.stringify(platosTemp)),total:tot,billete:metodoPago==='efectivo'?(bil||null):null,cambio:cam,metodoPago,hora:now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),fecha:now.toLocaleDateString('es-MX'),cobradoPor:S?.nombre||'',impreso:false,ts:serverTimestamp()};
     await addDoc(collection(db,'historial'),td);
     liberarMesasUnidas(m,mesas);
-    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';pedTmp={};platosTemp={};
+    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';m.abiertaEn=null;pedTmp={};platosTemp={};
     await saveMesas();
     c('ov-mesa');
-    const msg=cam!==null&&cam>=0?('✅ $'+tot+' — Cambio: $'+cam):('✅ '+m.nombre+' cobrada $'+tot);
+    const msg=metodoPago!=='efectivo'?('✅ $'+tot+' cobrado con '+(metodoPago==='tarjeta'?'tarjeta':'transferencia')):(cam!==null&&cam>=0?('✅ $'+tot+' — Cambio: $'+cam):('✅ '+m.nombre+' cobrada $'+tot));
     toast(msg);
     // Ticket se imprime al anotar el pedido, no al cobrar
   } catch(e){
@@ -1901,6 +1956,29 @@ window.exportCSV=()=>{
   toast('📥 Exportado');
 };
 
+function productosBajoMinimo(){ return inv.filter(p=>p.stock<=p.min); }
+
+window.abrirListaCompras=()=>{
+  const bajos=productosBajoMinimo();
+  $('compras-lista').innerHTML=bajos.length?bajos.map(p=>{
+    const sugerido=Math.max(Math.ceil(p.min*2-p.stock),1);
+    return `<div class="prow"><span class="pn">${p.nombre}</span><span class="pp">Comprar ${sugerido} ${p.unidad}</span></div>`;
+  }).join(''):'<p style="text-align:center;color:#bbb;padding:20px;">🎉 Todo el inventario está en buen nivel</p>';
+  a('ov-compras');
+};
+
+window.copiarListaCompras=async()=>{
+  const bajos=productosBajoMinimo();
+  if(!bajos.length){toast('🎉 No hay nada que comprar');return;}
+  let txt='🛒 Lista de compras — El Chiquilín\n📅 '+new Date().toLocaleDateString('es-MX')+'\n\n';
+  bajos.forEach(p=>{
+    const sugerido=Math.max(Math.ceil(p.min*2-p.stock),1);
+    txt+='• '+p.nombre+': comprar '+sugerido+' '+p.unidad+' (quedan '+p.stock+', mínimo '+p.min+')\n';
+  });
+  try{ await navigator.clipboard.writeText(txt); toast('📋 Copiado — pégalo en WhatsApp'); }
+  catch(e){ toast('❌ No se pudo copiar: '+e.message); }
+};
+
 // PRECIOS
 window.renderPrAccess=()=>{const adm=eAdmin();$('pr-denied').style.display=adm?'none':'block';$('pr-content').style.display=adm?'':'none';if(adm)renderPrecios();};
 window.renderPrecios=()=>{
@@ -2017,7 +2095,7 @@ window.renderHist=()=>{
   lista.innerHTML=filt.map((h,i)=>{
     const lv=h.tipo==='llevar';
     const items=Object.entries(h.pedido||{}).filter(([,v])=>v>0).map(([id,c])=>{const p=findP(id);return p?`${c}x ${p.nombre}`:''}).filter(Boolean).join(' · ');
-    const ci=eAdmin()&&h.billete?`💵 Pagó: $${h.billete} · Cambio: $${h.cambio>=0?h.cambio:'—'}`:'';
+    const ci=eAdmin()?(h.metodoPago==='tarjeta'?'💳 Tarjeta':h.metodoPago==='transferencia'?'🏦 Transferencia':h.billete?`💵 Pagó: $${h.billete} · Cambio: $${h.cambio>=0?h.cambio:'—'}`:''):'';
     const cp=h.cobradoPor?` · 👤 ${h.cobradoPor}`:'';
     return`<div class="historial-item ${lv?'llevar-hist':''}">
       <div class="hi-header"><span class="hi-mesa ${lv?'llevar':''}">${lv?'🛍️':'🍽️'} ${h.mesa}</span>${eAdmin()?('<span class="hi-total">$'+h.total+'</span>'):''}</div>
@@ -2074,6 +2152,8 @@ window.hacerCorte=()=>{
     }
   });
   const top=Object.entries(vts).sort((a,b)=>b[1].cant-a[1].cant);
+  const porMetodo={efectivo:0,tarjeta:0,transferencia:0};
+  filt.forEach(h=>{const m=h.metodoPago||'efectivo';porMetodo[m]=(porMetodo[m]||0)+h.total;});
   // Mostrar resumen
   const lbl={hoy:'Hoy',ayer:'Ayer',semana:'Esta semana',mes:'Este mes',todo:'Todo',rango:'Período'}[fechaMode]||'Período';
   const prev=$('corte-preview');
@@ -2087,6 +2167,9 @@ window.hacerCorte=()=>{
     <div class="resumen-row" style="padding-top:9px;border-top:2px solid rgba(26,8,0,0.08);">
       <span>💰 Total ventas</span><span style="color:var(--verde);font-weight:900;font-size:15px;">$${totalVentas}</span>
     </div>
+    <div class="resumen-row"><span>💵 Efectivo</span><span>$${porMetodo.efectivo}</span></div>
+    ${porMetodo.tarjeta>0?'<div class="resumen-row"><span>💳 Tarjeta</span><span>$'+porMetodo.tarjeta+'</span></div>':''}
+    ${porMetodo.transferencia>0?'<div class="resumen-row"><span>🏦 Transferencia</span><span>$'+porMetodo.transferencia+'</span></div>':''}
     ${totalGastos>0?`<div class="resumen-row"><span>🛒 Gastos</span><span style="color:var(--rojo);font-weight:900;">−$${totalGastos}</span></div>
     <div class="resumen-row" style="border-bottom:none;"><span style="font-weight:900;">📈 Ganancia neta</span><span style="font-family:'Bebas Neue',cursive;font-size:20px;color:${ganancia>=0?'var(--verde)':'var(--rojo)'};">$${ganancia}</span></div>`:''}
     <div style="margin-top:12px;display:flex;gap:8px;">
@@ -2119,13 +2202,20 @@ window.imprimirCorte=()=>{
   Object.entries(vts).sort((a,b)=>b[1].cant-a[1].cant).forEach(([,d])=>{t+=row('  '+d.nombre,d.cant+' pzas $'+d.sub)+NLC;});
   t+=ln+NLC;
   t+=row('  TOTAL VENTAS:','$'+totalVentas)+NLC;
+  const porMetodo={efectivo:0,tarjeta:0,transferencia:0};
+  filt.forEach(h=>{const m=h.metodoPago||'efectivo';porMetodo[m]=(porMetodo[m]||0)+h.total;});
+  t+=row('  Efectivo:','$'+porMetodo.efectivo)+NLC;
+  if(porMetodo.tarjeta>0) t+=row('  Tarjeta:','$'+porMetodo.tarjeta)+NLC;
+  if(porMetodo.transferencia>0) t+=row('  Transferencia:','$'+porMetodo.transferencia)+NLC;
   if(totalGastos>0){t+=row('  GASTOS:','$'+totalGastos)+NLC;t+=row('  GANANCIA:','$'+ganancia)+NLC;}
   t+=ln+NLC+ctr('Corte generado por '+(S?.nombre||''))+NLC;
   // Imprimir
   const w=window.open('','_blank','width=300,height=500');
   if(!w)return;
   w.document.write('<!DOCTYPE html><html><head><title>Corte</title><style>@page{size:58mm auto;margin:1mm;}body{font-family:Courier New,monospace;font-size:11px;width:54mm;white-space:pre;line-height:1.5;margin:0;padding:1mm;}</style></head><body>'+t.split('\n').join('<br>')+'</body></html>');
-  w.document.close();setTimeout(()=>{w.focus();w.print();},300);
+  w.document.close();
+  w.onafterprint=()=>w.close();
+  setTimeout(()=>{w.focus();w.print();},300);
 };
 
 window.delVenta=async id=>{if(!confirm('¿Eliminar?'))return;try{await deleteDoc(doc(db,'historial',id));toast('🗑️ Eliminado');}catch(e){toast('❌ Error al eliminar: '+e.message);}};
@@ -2138,7 +2228,7 @@ window.limpiarPeriodo=async()=>{
 
 // TICKET
 function buildTicket(datos){
-  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,cobradoPor,platos,notaGeneral}=datos;
+  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,cobradoPor,platos,notaGeneral,metodoPago}=datos;
   const ln='--------------------------------';
   const ctr=t=>{const s=Math.max(0,Math.floor((32-t.length)/2));return' '.repeat(s)+t;};
   const row=(i,d)=>{const e=Math.max(1,32-i.length-String(d).length);return i+' '.repeat(e)+d;};
@@ -2199,8 +2289,12 @@ function buildTicket(datos){
     }
   });
   t+=ln+'\n'+row('  TOTAL:',`$${total}`)+'\n';
-  if(billete)t+=row('  Pagó:',`$${billete}`)+'\n';
-  if(cambio!=null&&cambio>=0)t+=row('  Cambio:',`$${cambio}`)+'\n';
+  if(metodoPago==='tarjeta')t+=row('  Pago:','💳 Tarjeta')+'\n';
+  else if(metodoPago==='transferencia')t+=row('  Pago:','🏦 Transferencia')+'\n';
+  else{
+    if(billete)t+=row('  Pagó:',`$${billete}`)+'\n';
+    if(cambio!=null&&cambio>=0)t+=row('  Cambio:',`$${cambio}`)+'\n';
+  }
   t+=ln+'\n';
   // Sin atendió en ticket
   t+=ctr('¡Gracias por su preferencia!')+'\n'+ctr('Vuelva pronto 🌮')+'\n';
@@ -2314,7 +2408,7 @@ async function enviarAImpresora(bytes){
 
 // Construir ESC/POS para 58mm
 function buildEscPos(datos){
-  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha}=datos;
+  const {nombre,cliente,telefono,direccion,pedido,total,billete,cambio,hora,fecha,metodoPago}=datos;
   const NL='\n';
   const W=32;
   const ln='-'.repeat(W);
@@ -2389,8 +2483,12 @@ function buildEscPos(datos){
   esc(0x21,0x08);
   add(row('  TOTAL:','$'+total)+NL);
   esc(0x21,0x00);
-  if(billete) add(row('  Pago:','$'+billete)+NL);
-  if(cambio!=null&&cambio>=0) add(row('  Cambio:','$'+cambio)+NL);
+  if(metodoPago==='tarjeta') add(row('  Pago:','Tarjeta')+NL);
+  else if(metodoPago==='transferencia') add(row('  Pago:','Transferencia')+NL);
+  else{
+    if(billete) add(row('  Pago:','$'+billete)+NL);
+    if(cambio!=null&&cambio>=0) add(row('  Cambio:','$'+cambio)+NL);
+  }
   add(ln+NL);
   // Pie centrado
   esc(0x61,0x01);
@@ -2553,7 +2651,7 @@ window.vaciarMesa=id=>{
   const m=mesasTemp.find(x=>x.id===id);if(!m)return;
   if(!confirm('¿Vaciar el pedido de '+m.nombre+'? Esto NO cobra ni registra ninguna venta, solo libera la mesa.'))return;
   liberarMesasUnidas(m,mesasTemp);
-  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
+  m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';m.abiertaEn=null;
   renderMesasAdmin();
   toast('🧹 Mesa vaciada — presiona "Guardar mesas en la nube" para confirmar');
 };
@@ -2671,7 +2769,7 @@ window.confirmarFiado=async()=>{
     }
     // Limpiar mesa igual que al cobrar
     liberarMesasUnidas(m,mesas);
-    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';
+    m.pedido={};m.platos={};m.abierta=false;m.cliente='';m.telefono='';m.direccion='';m.abiertaPor='';m.ticketCajaId=null;m.notaGeneral='';m.abiertaEn=null;
     pedTmp={};platosTemp={};
     await saveMesas();
     c('ov-mesa');
@@ -2938,7 +3036,7 @@ document.addEventListener('click', e=>{
 });
 
 // CERRAR MODALES AL CLICK FUERA
-['ov-prod','ov-item','ov-mesa','ov-usr','ov-ticket','ov-nueva-mesa','ov-gasto','ov-fiado','ov-abono'].forEach(id=>{
+['ov-prod','ov-item','ov-mesa','ov-usr','ov-ticket','ov-nueva-mesa','ov-gasto','ov-fiado','ov-abono','ov-compras'].forEach(id=>{
   const el=$(id);if(el)el.addEventListener('click',function(e){if(e.target===this)c(id);});
 });
 // ov-scan aparte: cerrar aquí debe apagar la cámara, no solo ocultar el overlay
