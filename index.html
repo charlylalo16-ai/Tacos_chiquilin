@@ -949,8 +949,8 @@ let mesaAct=null,pedTmp={};
 let pagoParcialSel={},procesandoPagoParcial=false;
 let iCat=null,iId=null;
 let fechaMode='hoy';
-let mesasTemp=[];
-let lastServerLista=null; // última copia conocida del servidor, para no pisar cambios de otros meseros
+let mesasTemp=[],mesasTempBase=[];
+let lastServerLista=null,lastServerInv=null; // última copia conocida del servidor, para no pisar cambios de otros dispositivos
 
 // DEFAULTS
 const MENU0={tacos:[{id:'taco',nombre:'Taco dorado',precio:25},{id:'volcan',nombre:'Volcán',precio:35},{id:'sube',nombre:'Sube',precio:40},{id:'quesadilla',nombre:'Quesadilla',precio:45}],bebidas:[{id:'ref400',nombre:'Refresco 400ml',precio:20,inv:'ref400'},{id:'ref600',nombre:'Refresco 600ml',precio:25,inv:'ref600'},{id:'ref1l',nombre:'Refresco 1L',precio:35,inv:'ref1l'},{id:'agua400',nombre:'Agua 400ml',precio:15,inv:'agua400'},{id:'agua600',nombre:'Agua 600ml',precio:20,inv:'agua600'},{id:'agua1l',nombre:'Agua 1L',precio:25,inv:'agua1l'}],consome:[{id:'cs',nombre:'Consomé Chico',precio:20},{id:'cg',nombre:'Consomé Grande',precio:35}]};
@@ -991,7 +991,7 @@ window.logout=async()=>{
   unsubs.forEach(u=>u&&u());unsubs=[];
   if(unsubFiados){unsubFiados();unsubFiados=null;}
   await signOut(auth);
-  S=null;menu=null;mesas=null;inv=null;hist=[];lastServerLista=null;
+  S=null;menu=null;mesas=null;inv=null;hist=[];lastServerLista=null;lastServerInv=null;
   $('app').style.display='none';
   $('login-screen').style.display='flex';
 };
@@ -1081,6 +1081,7 @@ function suscribir(){
   unsubs.push(onSnapshot(doc(db,'config','inventario'),s=>{
     if(s.exists()){
       inv=s.data().lista||[];
+      lastServerInv=JSON.parse(JSON.stringify(inv));
       const p=document.querySelector('.page.active');
       if(p?.id==='page-inventario') renderInvAccess();
     }
@@ -1780,25 +1781,45 @@ async function getSiguienteFolio(){
   return siguiente;
 }
 
-// Transacción: solo escribe las mesas que YO cambié localmente (comparadas contra la última
-// copia conocida del servidor), para no pisar el pedido que otro mesero guardó mientras tanto.
+// Mezcla una lista guardada en la nube (config/mesas, config/inventario) sin pisar lo que
+// otro dispositivo haya cambiado al mismo tiempo: por cada id, si YO no lo toqué (comparado
+// contra la última copia conocida del servidor) se respeta lo más reciente del servidor
+// -incluyendo si alguien más lo borró o si alguien más agregó uno nuevo-; si YO sí lo cambié
+// (lo edité, lo agregué o lo borré), prevalece lo mío.
+function mergeListaLocal(freshLista,localLista,baseLista){
+  const freshById=new Map((freshLista||[]).map(x=>[x.id,x]));
+  const baseById=new Map((baseLista||[]).map(x=>[x.id,x]));
+  const localIds=new Set((localLista||[]).map(x=>x.id));
+  const merged=[];
+  (localLista||[]).forEach(localM=>{
+    const freshM=freshById.get(localM.id);
+    const baseM=baseById.get(localM.id);
+    const cambioLocal=JSON.stringify(localM)!==JSON.stringify(baseM);
+    if(cambioLocal) merged.push(localM);
+    else if(freshM) merged.push(freshM);
+    // si no lo toqué y ya no está en el servidor, alguien más lo borró: se respeta el borrado
+  });
+  (freshLista||[]).forEach(freshM=>{
+    if(!localIds.has(freshM.id)&&!baseById.has(freshM.id)) merged.push(freshM); // nuevo de otro dispositivo
+  });
+  return merged;
+}
 const saveMesas=async()=>{
   const ref=doc(db,'config','mesas');
   await runTransaction(db,async tx=>{
     const snap=await tx.get(ref);
     const freshLista=snap.exists()?(snap.data().lista||[]):[];
-    const merged=freshLista.map(freshM=>{
-      const localM=mesas?.find(x=>x.id===freshM.id);
-      if(!localM)return freshM;
-      const baseM=lastServerLista?.find(x=>x.id===freshM.id);
-      const cambioLocal=JSON.stringify(localM)!==JSON.stringify(baseM);
-      return cambioLocal?localM:freshM;
-    });
-    (mesas||[]).forEach(localM=>{if(!merged.find(x=>x.id===localM.id))merged.push(localM);});
-    tx.set(ref,{lista:merged});
+    tx.set(ref,{lista:mergeListaLocal(freshLista,mesas,lastServerLista)});
   });
 };
-const saveInv=async()=>setDoc(doc(db,'config','inventario'),{lista:inv});
+const saveInv=async()=>{
+  const ref=doc(db,'config','inventario');
+  await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);
+    const freshLista=snap.exists()?(snap.data().lista||[]):[];
+    tx.set(ref,{lista:mergeListaLocal(freshLista,inv,lastServerInv)});
+  });
+};
 
 // INVENTARIO
 window.renderInvAccess=()=>{
@@ -2614,7 +2635,8 @@ window.renderUsrAccess=async()=>{
   $('usr-denied').style.display=adm?'none':'block';
   $('usr-content').style.display=adm?'block':'none';
   if(!adm)return;
-  if(mesas)mesasTemp=JSON.parse(JSON.stringify(mesas));renderMesasAdmin();
+  if(mesas){mesasTemp=JSON.parse(JSON.stringify(mesas));mesasTempBase=JSON.parse(JSON.stringify(mesas));}
+  renderMesasAdmin();
   const snap=await getDocs(collection(db,'usuarios'));
   const usrs=snap.docs.map(d=>({...d.data(),uid:d.id}));
   $('usrLista').innerHTML=usrs.map(u=>`<div class="user-card ${u.rol}">
@@ -2673,7 +2695,18 @@ window.vaciarMesa=id=>{
   renderMesasAdmin();
   toast('🧹 Mesa vaciada — presiona "Guardar mesas en la nube" para confirmar');
 };
-window.guardarMesasNube=async()=>{if(!confirm('¿Guardar cambios?'))return;try{await setDoc(doc(db,'config','mesas'),{lista:mesasTemp});toast('✅ Mesas actualizadas');}catch(e){toast('❌ Error al guardar: '+e.message);}};
+window.guardarMesasNube=async()=>{
+  if(!confirm('¿Guardar cambios?'))return;
+  try{
+    const ref=doc(db,'config','mesas');
+    await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);
+      const freshLista=snap.exists()?(snap.data().lista||[]):[];
+      tx.set(ref,{lista:mergeListaLocal(freshLista,mesasTemp,mesasTempBase)});
+    });
+    toast('✅ Mesas actualizadas');
+  }catch(e){toast('❌ Error al guardar: '+e.message);}
+};
 
 // ════════════════════════════════════════════
 //  GASTOS
