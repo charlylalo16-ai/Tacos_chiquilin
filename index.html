@@ -1801,16 +1801,20 @@ function mergeListaLocal(freshLista,localLista,baseLista){
   return merged;
 }
 // Guarda fusionando contra el servidor (ver mergeListaLocal). Si la conexión está mala y la
-// transacción no puede completarse, se manda la copia local de todas formas con un guardado
-// simple -igual que antes de usar transacciones- para no perder el pedido: Firestore la
-// reintentará solo cuando vuelva la señal.
+// transacción tarda demasiado o no puede completarse, no nos quedamos esperando: se manda la
+// copia local de todas formas con un guardado simple -igual que antes de usar transacciones-
+// para no perder el pedido ni dejar a nadie trabado cobrando. Firestore reintentará solo
+// cuando vuelva la señal.
 async function guardarListaFusionada(ref,localLista,baseLista){
   try{
-    await runTransaction(db,async tx=>{
-      const snap=await tx.get(ref);
-      const freshLista=snap.exists()?(snap.data().lista||[]):[];
-      tx.set(ref,{lista:mergeListaLocal(freshLista,localLista,baseLista)});
-    });
+    await Promise.race([
+      runTransaction(db,async tx=>{
+        const snap=await tx.get(ref);
+        const freshLista=snap.exists()?(snap.data().lista||[]):[];
+        tx.set(ref,{lista:mergeListaLocal(freshLista,localLista,baseLista)});
+      }),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de guardado')),2500))
+    ]);
   }catch(e){
     await setDoc(ref,{lista:localLista});
   }
