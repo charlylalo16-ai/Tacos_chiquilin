@@ -1285,9 +1285,7 @@ window.agregarPlatoMix=async()=>{
     const inp=document.getElementById('mix-'+p.id);if(inp)inp.value='';
     const inpM=document.getElementById('mza-'+p.id);if(inpM)inpM.value='';
   });
-  const m=mesas?.find(x=>x.id===mesaAct);
-  if(m){m.pedido=JSON.parse(JSON.stringify(pedTmp));m.platos=JSON.parse(JSON.stringify(platosTemp));m.abierta=true;await saveMesas();}
-  renderPedMod();
+  renderPedMod(); // ya guarda (updTot al final) — no duplicar el guardado aquí
   toast('✅ Plato agregado: $'+totalPrecio);
 };
 
@@ -1303,9 +1301,7 @@ window.quitarPlatoGlobal=async(id,idx)=>{
   }
   platosTemp[id].splice(idx,1);
   if(platosTemp[id].length===0) delete platosTemp[id];
-  const m=mesas?.find(x=>x.id===mesaAct);
-  if(m){m.pedido=JSON.parse(JSON.stringify(pedTmp));m.platos=JSON.parse(JSON.stringify(platosTemp));m.abierta=Object.values(pedTmp).some(v=>v>0);await saveMesas();}
-  renderPedMod();
+  renderPedMod(); // ya guarda (updTot al final) — no duplicar el guardado aquí
 };
 
 // quitarPlato reemplazado por quitarPlatoGlobal
@@ -1356,7 +1352,7 @@ async function enviarTicketPedido(){
 }
 
 window.chQty=(id,d)=>{pedTmp[id]=(pedTmp[id]||0)+d;if(pedTmp[id]<0)pedTmp[id]=0;const e=$('q-'+id);if(e)e.textContent=pedTmp[id];updTot();};
-async function updTot(){
+function updTot(){
   const t=calcT(pedTmp);$('mesa-tot').textContent='$'+t;
   const m=mesas?.find(x=>x.id===mesaAct);
   if(m){
@@ -1364,7 +1360,7 @@ async function updTot(){
     m.platos=JSON.parse(JSON.stringify(platosTemp));
     m.abierta=Object.values(pedTmp).some(v=>v>0);
     if(m.abierta&&!m.abiertaPor){ m.abiertaPor=S?.nombre||''; m.abiertaEn=Date.now(); }
-    await saveMesas();
+    saveMesasDebounced();
   }
   calcCambio();
   renderLineasParcial();
@@ -1804,22 +1800,29 @@ function mergeListaLocal(freshLista,localLista,baseLista){
   });
   return merged;
 }
-const saveMesas=async()=>{
-  const ref=doc(db,'config','mesas');
-  await runTransaction(db,async tx=>{
-    const snap=await tx.get(ref);
-    const freshLista=snap.exists()?(snap.data().lista||[]):[];
-    tx.set(ref,{lista:mergeListaLocal(freshLista,mesas,lastServerLista)});
-  });
-};
-const saveInv=async()=>{
-  const ref=doc(db,'config','inventario');
-  await runTransaction(db,async tx=>{
-    const snap=await tx.get(ref);
-    const freshLista=snap.exists()?(snap.data().lista||[]):[];
-    tx.set(ref,{lista:mergeListaLocal(freshLista,inv,lastServerInv)});
-  });
-};
+// Guarda fusionando contra el servidor (ver mergeListaLocal). Si la conexión está mala y la
+// transacción no puede completarse, se manda la copia local de todas formas con un guardado
+// simple -igual que antes de usar transacciones- para no perder el pedido: Firestore la
+// reintentará solo cuando vuelva la señal.
+async function guardarListaFusionada(ref,localLista,baseLista){
+  try{
+    await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);
+      const freshLista=snap.exists()?(snap.data().lista||[]):[];
+      tx.set(ref,{lista:mergeListaLocal(freshLista,localLista,baseLista)});
+    });
+  }catch(e){
+    await setDoc(ref,{lista:localLista});
+  }
+}
+const saveMesas=async()=>guardarListaFusionada(doc(db,'config','mesas'),mesas,lastServerLista);
+const saveInv=async()=>guardarListaFusionada(doc(db,'config','inventario'),inv,lastServerInv);
+
+// Para toques rápidos (+/-): junta varios toques seguidos en un solo guardado real,
+// para no disparar una transacción de red por cada click en conexiones lentas.
+let saveMesasTimer=null,saveInvTimer=null;
+function saveMesasDebounced(){clearTimeout(saveMesasTimer);saveMesasTimer=setTimeout(()=>{saveMesas().catch(e=>console.warn('saveMesas:',e));},400);}
+function saveInvDebounced(){clearTimeout(saveInvTimer);saveInvTimer=setTimeout(()=>{saveInv().catch(e=>console.warn('saveInv:',e));},400);}
 
 // INVENTARIO
 window.renderInvAccess=()=>{
@@ -1873,11 +1876,11 @@ window.guardarProd=async()=>{
   finally{guardandoProd=false;}
 };
 window.delProd=async id=>{if(!confirm('¿Eliminar?'))return;inv=inv.filter(x=>x.id!==id);await saveInv();toast('🗑️ Eliminado');};
-window.ajustarStock=async(id,d)=>{
+window.ajustarStock=(id,d)=>{
   const p=inv.find(x=>x.id===id);if(!p)return;
   p.stock=Math.max(0,(p.stock||0)+d);
   renderInv();
-  try{await saveInv();}catch(e){toast('❌ Error al guardar: '+e.message);}
+  saveInvDebounced();
 };
 window.editarStockExacto=async(id)=>{
   const p=inv.find(x=>x.id===id);if(!p)return;
@@ -2698,12 +2701,7 @@ window.vaciarMesa=id=>{
 window.guardarMesasNube=async()=>{
   if(!confirm('¿Guardar cambios?'))return;
   try{
-    const ref=doc(db,'config','mesas');
-    await runTransaction(db,async tx=>{
-      const snap=await tx.get(ref);
-      const freshLista=snap.exists()?(snap.data().lista||[]):[];
-      tx.set(ref,{lista:mergeListaLocal(freshLista,mesasTemp,mesasTempBase)});
-    });
+    await guardarListaFusionada(doc(db,'config','mesas'),mesasTemp,mesasTempBase);
     toast('✅ Mesas actualizadas');
   }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
