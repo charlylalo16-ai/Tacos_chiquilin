@@ -295,7 +295,7 @@ function renderPendientes(){
     return`<div class="ticket-card ${imp?'imprimiendo':''}" id="tc-${h._id}">
       ${h.turno?('<div style="font-family:Bebas Neue,cursive;font-size:48px;color:var(--amarillo);line-height:1;text-align:center;padding:4px 0;">#'+h.turno+'</div>'):''}
       <div class="tc-header">
-        <div class="tc-mesa">${h.tipo==='llevar'?'🛍️':'🍽️'} ${h.mesa}</div>
+        <div class="tc-mesa">${h.tipo==='llevar'?'🛍️':'🍽️'} ${escHtml(h.mesa)}</div>
         <div class="tc-total">$${h.total}</div>
       </div>
       <div class="tc-hora">🕐 ${h.hora}${h.cliente?' · 👤 '+escHtml(h.cliente):''}</div>
@@ -319,7 +319,7 @@ function renderHistorial(){
   lista.innerHTML=todosImpresos.sort((a,b)=>(a.turno||0)-(b.turno||0)).map(h=>
     '<div class="hist-item">'
     +(h.turno?'<span style="font-family:Bebas Neue,cursive;color:var(--amarillo);font-size:16px;min-width:32px;">#'+h.turno+'</span>':'')
-    +'<span class="hi-mesa">'+(h.tipo==='llevar'?'🛍️':'🍽️')+' '+h.mesa+'</span>'
+    +'<span class="hi-mesa">'+(h.tipo==='llevar'?'🛍️':'🍽️')+' '+escHtml(h.mesa)+'</span>'
     +'<span>'+h.hora+'</span>'
     +'<span class="hi-tot">$'+h.total+'</span>'
     +'<span class="hi-status">✅</span>'

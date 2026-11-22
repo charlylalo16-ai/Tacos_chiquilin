@@ -570,7 +570,7 @@ function renderPedidos(){
     return`<div class="pedido-card" id="pcard-${m.id}">
       <div class="pedido-header">
         <div>
-          <div class="pedido-mesa ${lv?'pedido-llevar':''}">${lv?'🛍️':'🍽️'} ${m.nombre}</div>
+          <div class="pedido-mesa ${lv?'pedido-llevar':''}">${lv?'🛍️':'🍽️'} ${escHtml(m.nombre)}</div>
           ${m.cliente?`<div class="pedido-cliente">👤 ${escHtml(m.cliente)}</div>`:''}
         </div>
         <div class="pedido-tiempo">$${tot}</div>
@@ -677,9 +677,9 @@ async function renderStats(){
   // Por mesero
   $('meserosList').innerHTML=Object.entries(porMesero).sort((a,b)=>b[1].mesas-a[1].mesas).map(([nombre,d])=>`
     <div class="mesero-card">
-      <div class="mesero-avatar">${nombre.charAt(0).toUpperCase()}</div>
+      <div class="mesero-avatar">${escHtml(nombre.charAt(0).toUpperCase())}</div>
       <div class="mesero-info">
-        <div class="mesero-nombre">${nombre}</div>
+        <div class="mesero-nombre">${escHtml(nombre)}</div>
         <div class="mesero-rol">Mesero</div>
       </div>
       <div class="mesero-stats">

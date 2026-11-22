@@ -1076,12 +1076,22 @@ function suscribir(){
   suscribirFiados();
   unsubs.push(onSnapshot(doc(db,'config','menu'),s=>{if(s.exists()){menu=s.data();renderMesas();const p=document.querySelector('.page.active');if(p?.id==='page-precios')renderPrecios();}},
     err=>{console.error('menu error:',err.code,err.message);toast('❌ Error al cargar el menú: '+err.message);}));
-  unsubs.push(onSnapshot(doc(db,'config','mesas'),s=>{if(s.exists()){mesas=s.data().lista;lastServerLista=JSON.parse(JSON.stringify(mesas));renderMesas();}},
-    err=>{console.error('mesas error:',err.code,err.message);toast('❌ Error al cargar las mesas: '+err.message);}));
+  unsubs.push(onSnapshot(doc(db,'config','mesas'),s=>{
+    if(s.exists()){
+      const freshLista=s.data().lista||[];
+      // Fusionar con lo local en vez de pisarlo: si yo tengo un cambio sin guardar todavía
+      // (p.ej. un toque de hace 200ms que sigue en el debounce) y llega una actualización de
+      // otro celular, que no me lo borre antes de que le toque guardarse.
+      mesas=mesas?mergeListaLocal(freshLista,mesas,lastServerLista):freshLista;
+      lastServerLista=JSON.parse(JSON.stringify(freshLista));
+      renderMesas();
+    }
+  },err=>{console.error('mesas error:',err.code,err.message);toast('❌ Error al cargar las mesas: '+err.message);}));
   unsubs.push(onSnapshot(doc(db,'config','inventario'),s=>{
     if(s.exists()){
-      inv=s.data().lista||[];
-      lastServerInv=JSON.parse(JSON.stringify(inv));
+      const freshLista=s.data().lista||[];
+      inv=inv?mergeListaLocal(freshLista,inv,lastServerInv):freshLista;
+      lastServerInv=JSON.parse(JSON.stringify(freshLista));
       const p=document.querySelector('.page.active');
       if(p?.id==='page-inventario') renderInvAccess();
     }
@@ -1123,9 +1133,9 @@ window.renderMesas=()=>{
     if(m.fusionadaCon){
       const host=mesas.find(x=>x.id===m.fusionadaCon);
       return`<div class="mesa-card">
-        <div class="mesa-header"><span class="mesa-num">${em} ${m.nombre}</span><span class="mesa-total-show">🔗 Unida</span></div>
-        <div class="mesa-body"><p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">Fusionada con ${host?.nombre||'otra mesa'}</p></div>
-        <div class="mesa-btns"><button class="btn btn-cafe" onclick="abrirMesa(${m.fusionadaCon})">Ver cuenta de ${host?.nombre||''}</button></div>
+        <div class="mesa-header"><span class="mesa-num">${em} ${escHtml(m.nombre)}</span><span class="mesa-total-show">🔗 Unida</span></div>
+        <div class="mesa-body"><p style="color:#bbb;font-size:10px;text-align:center;padding:5px 0">Fusionada con ${escHtml(host?.nombre||'otra mesa')}</p></div>
+        <div class="mesa-btns"><button class="btn btn-cafe" onclick="abrirMesa(${m.fusionadaCon})">Ver cuenta de ${escHtml(host?.nombre||'')}</button></div>
       </div>`;
     }
     const tot=calcT(m.pedido);
@@ -1143,10 +1153,10 @@ window.renderMesas=()=>{
     }
     return`<div class="mesa-card ${cls}${lv?' llevar-card':''}">
       <div class="mesa-header ${cls}">
-        <span class="mesa-num">${em} ${m.nombre}${cb}${ub}</span>
+        <span class="mesa-num">${em} ${escHtml(m.nombre)}${cb}${ub}</span>
         <div style="text-align:right;">
           <span class="mesa-total-show">${m.abierta?'$'+tot:'Libre'}</span>
-          ${m.abierta&&m.abiertaPor?'<div style="font-size:9px;opacity:.7;font-family:Nunito,sans-serif;font-weight:700;">👤 '+m.abiertaPor+'</div>':''}
+          ${m.abierta&&m.abiertaPor?'<div style="font-size:9px;opacity:.7;font-family:Nunito,sans-serif;font-weight:700;">👤 '+escHtml(m.abiertaPor)+'</div>':''}
           ${tiempoHtml}
         </div>
       </div>
@@ -1417,14 +1427,14 @@ function renderListaUnir(){
   if(unidas.length){
     html+='<label>Mesas unidas a esta cuenta</label>';
     html+=unidas.map(x=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
-      <span style="flex:1;font-size:12px;font-weight:700;">${x.tipo==='llevar'?'🛍️':'🍽️'} ${x.nombre}</span>
+      <span style="flex:1;font-size:12px;font-weight:700;">${x.tipo==='llevar'?'🛍️':'🍽️'} ${escHtml(x.nombre)}</span>
       <button class="btn btn-gris" style="flex:0;padding:6px 10px;" onclick="desvincularMesa(${x.id})">↩️ Separar</button>
     </div>`).join('');
   }
   html+='<label style="margin-top:'+(unidas.length?'10px':'0')+';">Elige la mesa a unir con esta cuenta</label>';
   html+=disponibles.length?disponibles.map(x=>{
     const tot=calcT(x.pedido);
-    return `<button class="btn btn-gris" style="width:100%;margin-bottom:6px;text-align:left;" onclick="unirMesa(${x.id})">${x.tipo==='llevar'?'🛍️':'🍽️'} ${x.nombre} — ${x.abierta?'$'+tot:'Libre'}</button>`;
+    return `<button class="btn btn-gris" style="width:100%;margin-bottom:6px;text-align:left;" onclick="unirMesa(${x.id})">${x.tipo==='llevar'?'🛍️':'🍽️'} ${escHtml(x.nombre)} — ${x.abierta?'$'+tot:'Libre'}</button>`;
   }).join(''):'<p style="text-align:center;color:#bbb;font-size:11px;">No hay otras mesas disponibles para unir</p>';
   $('unir-lista').innerHTML=html;
 }
@@ -1801,11 +1811,12 @@ function mergeListaLocal(freshLista,localLista,baseLista){
   return merged;
 }
 // Guarda fusionando contra el servidor (ver mergeListaLocal). Si la conexión está mala y la
-// transacción tarda demasiado o no puede completarse, no nos quedamos esperando: se manda la
-// copia local de todas formas con un guardado simple -igual que antes de usar transacciones-
-// para no perder el pedido ni dejar a nadie trabado cobrando. Firestore reintentará solo
-// cuando vuelva la señal.
-async function guardarListaFusionada(ref,localLista,baseLista){
+// transacción tarda demasiado o no puede completarse, no nos quedamos esperando: se fusiona
+// contra la copia más reciente del servidor que tengamos EN MEMORIA (el listener en tiempo
+// real sigue llegando aunque la escritura esté fallando) y se manda con un guardado simple,
+// para no perder el pedido, no dejar a nadie trabado cobrando, y sin volver a pisar a ciegas
+// lo que otro dispositivo haya guardado mientras tanto.
+async function guardarListaFusionada(ref,localLista,baseLista,ultimaConocidaServidor){
   try{
     await Promise.race([
       runTransaction(db,async tx=>{
@@ -1816,7 +1827,8 @@ async function guardarListaFusionada(ref,localLista,baseLista){
       new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de guardado')),2500))
     ]);
   }catch(e){
-    await setDoc(ref,{lista:localLista});
+    const mejorFresca=ultimaConocidaServidor||baseLista;
+    await setDoc(ref,{lista:mergeListaLocal(mejorFresca,localLista,baseLista)});
   }
 }
 const saveMesas=async()=>guardarListaFusionada(doc(db,'config','mesas'),mesas,lastServerLista);
@@ -1870,7 +1882,12 @@ window.guardarProd=async()=>{
   if(guardandoProd)return;
   const nom=$('p-nom').value.trim();if(!nom){toast('⚠️ Escribe el nombre');return;}
   const costoVal=parseFloat($('p-costo').value)||0;
-  const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null,codigoBarras:$('p-cod').value.trim()||null};
+  const cod=$('p-cod').value.trim()||null;
+  if(cod){
+    const dup=inv.find(x=>x.codigoBarras===cod&&x.id!==editProdId);
+    if(dup){toast('⚠️ Ese código de barras ya es de "'+dup.nombre+'"');return;}
+  }
+  const obj={nombre:nom,categoria:$('p-cat').value,unidad:$('p-uni').value,stock:parseFloat($('p-stk').value)||0,min:parseFloat($('p-min').value)||0,costo:costoVal||null,codigoBarras:cod};
   guardandoProd=true;
   try{
     if(editProdId){const i=inv.findIndex(x=>x.id===editProdId);inv[i]={...inv[i],...obj};await saveInv();toast('✅ Actualizado');}
@@ -2142,9 +2159,9 @@ window.renderHist=()=>{
     const lv=h.tipo==='llevar';
     const items=Object.entries(h.pedido||{}).filter(([,v])=>v>0).map(([id,c])=>{const p=findP(id);return p?`${c}x ${p.nombre}`:''}).filter(Boolean).join(' · ');
     const ci=eAdmin()?(h.metodoPago==='tarjeta'?'💳 Tarjeta':h.metodoPago==='transferencia'?'🏦 Transferencia':h.billete?`💵 Pagó: $${h.billete} · Cambio: $${h.cambio>=0?h.cambio:'—'}`:''):'';
-    const cp=h.cobradoPor?` · 👤 ${h.cobradoPor}`:'';
+    const cp=h.cobradoPor?` · 👤 ${escHtml(h.cobradoPor)}`:'';
     return`<div class="historial-item ${lv?'llevar-hist':''}">
-      <div class="hi-header"><span class="hi-mesa ${lv?'llevar':''}">${lv?'🛍️':'🍽️'} ${h.mesa}</span>${eAdmin()?('<span class="hi-total">$'+h.total+'</span>'):''}</div>
+      <div class="hi-header"><span class="hi-mesa ${lv?'llevar':''}">${lv?'🛍️':'🍽️'} ${escHtml(h.mesa)}</span>${eAdmin()?('<span class="hi-total">$'+h.total+'</span>'):''}</div>
       ${h.cliente?('<div style="background:#fff3e0;border-radius:5px;padding:2px 7px;display:inline-block;font-size:10px;font-weight:800;color:#e65100;margin-bottom:2px;">👤 '+escHtml(h.cliente)+'</div>'):''}
       <div class="hi-hora">🕐 ${h.hora} — ${h.fecha}${cp}</div>
       <div class="hi-items">${items}</div>
@@ -2647,8 +2664,8 @@ window.renderUsrAccess=async()=>{
   const snap=await getDocs(collection(db,'usuarios'));
   const usrs=snap.docs.map(d=>({...d.data(),uid:d.id}));
   $('usrLista').innerHTML=usrs.map(u=>`<div class="user-card ${u.rol}">
-    <div class="uavatar">${u.photoURL?'<img src="'+u.photoURL+'" alt="">':((u.nombre||'?').charAt(0).toUpperCase())}</div>
-    <div class="uinfo"><div class="uname">${u.nombre||'Sin nombre'} <span class="role-badge ${u.rol}">${u.rol==='admin'?'Admin':'Mesero'}</span></div><div class="urole">${u.email||'Google'}</div></div>
+    <div class="uavatar">${u.photoURL?'<img src="'+u.photoURL+'" alt="">':escHtml((u.nombre||'?').charAt(0).toUpperCase())}</div>
+    <div class="uinfo"><div class="uname">${escHtml(u.nombre||'Sin nombre')} <span class="role-badge ${u.rol}">${u.rol==='admin'?'Admin':'Mesero'}</span></div><div class="urole">${escHtml(u.email||'Google')}</div></div>
     <div class="acciones">
       ${u.uid!==S?.uid?('<button class="btn-sm btn-edit" data-uid="'+u.uid+'" data-rol="'+(u.rol==='admin'?'mesero':'admin')+'" data-uaction="rol">🔄 '+(u.rol==='admin'?'→Mes':'→Adm')+'</button><button class="btn-sm btn-del" data-uid="'+u.uid+'" data-unom="'+(u.nombre||'').replace(/['"]/g,'')+'" data-uaction="del">🗑️</button>'):'<span style="font-size:9px;color:#ccc">Tú</span>'}
     </div>
@@ -2674,7 +2691,7 @@ window.guardarUsr=async()=>{
 // GESTIÓN MESAS
 function renderMesasAdmin(){
   const el=$('mesas-admin');if(!el)return;
-  el.innerHTML=mesasTemp.map(m=>`<div class="mesa-admin-row"><span>${m.tipo==='llevar'?'🛍️':'🍽️'}</span><span>${m.nombre}</span>${m.abierta?'<span style="font-size:9px;background:#fde8e8;color:var(--rojo-d);padding:2px 6px;border-radius:50px;font-weight:800;">Con pedido</span>':''}${m.abierta?`<button class="btn-sm" style="background:#fff3cd;color:#856404;" title="Vaciar pedido atorado sin cobrar" onclick="vaciarMesa(${m.id})">🧹</button>`:''}<button class="btn-sm btn-del" onclick="quitarMesa(${m.id})">🗑️</button></div>`).join('');
+  el.innerHTML=mesasTemp.map(m=>`<div class="mesa-admin-row"><span>${m.tipo==='llevar'?'🛍️':'🍽️'}</span><span>${escHtml(m.nombre)}</span>${m.abierta?'<span style="font-size:9px;background:#fde8e8;color:var(--rojo-d);padding:2px 6px;border-radius:50px;font-weight:800;">Con pedido</span>':''}${m.abierta?`<button class="btn-sm" style="background:#fff3cd;color:#856404;" title="Vaciar pedido atorado sin cobrar" onclick="vaciarMesa(${m.id})">🧹</button>`:''}<button class="btn-sm btn-del" onclick="quitarMesa(${m.id})">🗑️</button></div>`).join('');
 }
 function sugerirNombreMesa(tipo){
   const prefijo=tipo==='llevar'?'Para Llevar':'Mesa';
@@ -2705,7 +2722,7 @@ window.vaciarMesa=id=>{
 window.guardarMesasNube=async()=>{
   if(!confirm('¿Guardar cambios?'))return;
   try{
-    await guardarListaFusionada(doc(db,'config','mesas'),mesasTemp,mesasTempBase);
+    await guardarListaFusionada(doc(db,'config','mesas'),mesasTemp,mesasTempBase,lastServerLista);
     toast('✅ Mesas actualizadas');
   }catch(e){toast('❌ Error al guardar: '+e.message);}
 };
@@ -2719,7 +2736,7 @@ let unsubGastos=null;
 function suscribirGastos(){
   if(unsubGastos)unsubGastos();
   unsubGastos=onSnapshot(
-    query(collection(db,'gastos'),orderBy('ts','desc')),
+    query(collection(db,'gastos'),orderBy('ts','desc'),limit(2000)),
     snap=>{
       gastos=snap.docs.map(d=>({...d.data(),_id:d.id}));
       // Actualizar en tiempo real sin recargar
@@ -2787,8 +2804,8 @@ window.renderGastos=()=>{
     <div class="gasto-item">
       <div class="g-ico">🛒</div>
       <div class="g-info">
-        <div class="g-desc">${g.descripcion}</div>
-        <div class="g-meta">🕐 ${g.hora} — ${g.fecha}${g.anotadoPor?' · '+g.anotadoPor:''}</div>
+        <div class="g-desc">${escHtml(g.descripcion)}</div>
+        <div class="g-meta">🕐 ${g.hora} — ${g.fecha}${g.anotadoPor?' · '+escHtml(g.anotadoPor):''}</div>
       </div>
       <div class="g-monto">$${g.monto}</div>
       <button class="btn-sm btn-del" onclick="delGasto('${g._id}')">🗑️</button>
@@ -2947,15 +2964,15 @@ function renderFiados(){
     return '<div class="fiado-card '+(pagado?'pagado':'')+'">'
       +'<div class="fiado-header">'
         +'<div>'
-          +'<div class="fiado-nombre">👤 '+f.nombre+'</div>'
-          +'<div class="fiado-fecha">📅 '+f.fecha+(f.mesero?' · '+f.mesero:'')+'</div>'
+          +'<div class="fiado-nombre">👤 '+escHtml(f.nombre)+'</div>'
+          +'<div class="fiado-fecha">📅 '+f.fecha+(f.mesero?' · '+escHtml(f.mesero):'')+'</div>'
         +'</div>'
         +'<div style="text-align:right;">'
           +'<div class="fiado-monto">'+(pagado?'✅ Pagado':'$'+saldo)+'</div>'
           +(abonado>0&&!pagado?'<div style="font-size:10px;color:var(--verde);font-weight:700;">Abonado: $'+abonado+'</div>':'')
         +'</div>'
       +'</div>'
-      +'<div class="fiado-det">🛒 '+f.detalle+'</div>'
+      +'<div class="fiado-det">🛒 '+escHtml(f.detalle)+'</div>'
       +abonosHtml
       +'<div class="fiado-btns">'+btnAbonar+btnPagado+btnEditar+btnDel+'</div>'
     +'</div>';
